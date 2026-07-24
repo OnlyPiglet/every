@@ -62,8 +62,7 @@ interface and a memory.
 ## Install
 
 ```bash
-brew tap serhii-leniv/tap && brew trust serhii-leniv/tap   # one-time
-brew install every
+brew tap serhii-leniv/tap && brew trust serhii-leniv/tap && brew install every
 ```
 
 or from source:

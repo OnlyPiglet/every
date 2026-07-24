@@ -1,20 +1,34 @@
 module Every
-  # Parses human schedule tokens into a launchd-compatible trigger.
+  # Parses human schedule tokens into launchd-compatible triggers.
   #
-  #   15m / 2h / 90s      -> StartInterval (seconds)
-  #   hourly              -> StartInterval 3600
-  #   day 9am / day 17:30 -> StartCalendarInterval (daily)
-  #   monday 10:00        -> StartCalendarInterval (weekly)
+  #   15m / 2h / 90s            -> StartInterval (seconds)
+  #   hourly                    -> StartInterval 3600
+  #   day 9am                   -> daily at 9:00
+  #   day 9am,6pm               -> daily at 9:00 and 18:00
+  #   weekdays 9:30             -> Mon-Fri at 9:30
+  #   weekends 11am             -> Sat+Sun at 11:00
+  #   monday 10:00              -> weekly
+  #   monday,thursday 10:00     -> twice a week
+  #
+  # Calendar schedules normalize to a list of {weekday?, hour, minute}
+  # entries — one launchd StartCalendarInterval dict each.
   class Schedule
     WEEKDAYS = {
       "sunday" => 0, "monday" => 1, "tuesday" => 2, "wednesday" => 3,
       "thursday" => 4, "friday" => 5, "saturday" => 6
     }.freeze
 
+    DAY_SETS = {
+      "day" => [nil],
+      "daily" => [nil],
+      "weekdays" => [1, 2, 3, 4, 5],
+      "weekends" => [0, 6]
+    }.freeze
+
     UNIT_SECONDS = { "s" => 1, "m" => 60, "h" => 3600 }.freeze
     MIN_INTERVAL = 10
 
-    attr_reader :raw, :kind, :interval, :hour, :minute, :weekday
+    attr_reader :raw, :kind, :interval, :entries
 
     def self.parse(tokens)
       raw = tokens.join(" ")
@@ -30,17 +44,32 @@ module Every
         new(raw, :interval, interval: secs)
       elsif tokens.length == 1 && first == "hourly"
         new(raw, :interval, interval: 3600)
-      elsif first == "day" && tokens.length == 2
-        h, m = parse_time(tokens[1])
-        new(raw, :daily, hour: h, minute: m)
-      elsif WEEKDAYS.key?(first) && tokens.length == 2
-        h, m = parse_time(tokens[1])
-        new(raw, :weekly, hour: h, minute: m, weekday: WEEKDAYS[first])
+      elsif tokens.length == 2
+        days = parse_days(first)
+        times = tokens[1].split(",").map { |t| parse_time(t) }
+        entries = days.product(times).map do |wd, (h, m)|
+          e = { "hour" => h, "minute" => m }
+          e["weekday"] = wd if wd
+          e
+        end
+        new(raw, :calendar, entries: entries)
       else
         raise ArgumentError,
               "cannot parse schedule #{raw.inspect} " \
-              "(examples: 15m | hourly | day 9am | monday 10:00)"
+              "(examples: 15m | hourly | day 9am,6pm | weekdays 9:30 | monday,thursday 10:00)"
       end
+    end
+
+    def self.parse_days(spec)
+      return DAY_SETS[spec] if DAY_SETS.key?(spec)
+
+      parts = spec.split(",")
+      unless !parts.empty? && parts.all? { |p| WEEKDAYS.key?(p) }
+        raise ArgumentError,
+              "cannot parse days #{spec.inspect} " \
+              "(day | weekdays | weekends | monday | monday,thursday)"
+      end
+      parts.map { |p| WEEKDAYS[p] }.uniq
     end
 
     def self.parse_time(str)
@@ -61,39 +90,50 @@ module Every
       @raw = raw
       @kind = kind
       @interval = opts[:interval]
-      @hour = opts[:hour]
-      @minute = opts[:minute]
-      @weekday = opts[:weekday]
+      @entries = opts[:entries]
     end
 
     def to_h
       h = { "raw" => raw, "kind" => kind.to_s }
       h["interval"] = interval if interval
-      h["hour"] = hour if hour
-      h["minute"] = minute if minute
-      h["weekday"] = weekday if weekday
+      h["entries"] = entries if entries
       h
     end
 
+    # Accepts current format plus the pre-0.2 "daily"/"weekly" task records.
     def self.from_h(h)
-      new(h["raw"], h["kind"].to_sym,
-          interval: h["interval"], hour: h["hour"],
-          minute: h["minute"], weekday: h["weekday"])
+      case h["kind"]
+      when "interval"
+        new(h["raw"], :interval, interval: h["interval"])
+      when "calendar"
+        new(h["raw"], :calendar, entries: h["entries"])
+      when "daily"
+        new(h["raw"], :calendar,
+            entries: [{ "hour" => h["hour"], "minute" => h["minute"] }])
+      when "weekly"
+        new(h["raw"], :calendar,
+            entries: [{ "hour" => h["hour"], "minute" => h["minute"],
+                        "weekday" => h["weekday"] }])
+      else
+        raise ArgumentError, "unknown schedule kind #{h['kind'].inspect}"
+      end
     end
 
-    # Next calendar occurrence; nil for interval schedules.
+    # Earliest next calendar occurrence; nil for interval schedules.
     def next_run(from = Time.now)
-      case kind
-      when :daily
-        t = Time.new(from.year, from.month, from.day, hour, minute, 0)
-        t += 86_400 if t <= from
-        t
-      when :weekly
-        t = Time.new(from.year, from.month, from.day, hour, minute, 0)
-        t += ((weekday - from.wday) % 7) * 86_400
+      return nil if kind == :interval
+      entries.map { |e| next_for_entry(e, from) }.min
+    end
+
+    def next_for_entry(e, from)
+      t = Time.new(from.year, from.month, from.day, e["hour"], e["minute"], 0)
+      if e["weekday"]
+        t += ((e["weekday"] - from.wday) % 7) * 86_400
         t += 7 * 86_400 if t <= from
-        t
+      else
+        t += 86_400 if t <= from
       end
+      t
     end
 
     def human_interval

@@ -33,6 +33,7 @@ $ every doctor                # plain-language diagnosis
 | Mac was asleep at 9am | run **lost forever** | runs on wake | runs on wake — and you can verify it |
 | PATH | minimal, brew tools "not found" | minimal | your login shell, as in your terminal |
 | Working directory | `$HOME`, always | configure it yourself | the directory you added the task from |
+| A run fails | nothing happens | nothing happens | macOS notification + `FAIL` in `list` |
 | When it breaks | Console.app archaeology | Console.app archaeology | `every doctor` tells you why |
 
 Apple deprecated cron on macOS years ago. `every` is launchd — with a human
@@ -54,18 +55,23 @@ Zero dependencies. Runs on the Ruby already inside macOS.
 | `90s` · `15m` · `2h` | fixed interval |
 | `hourly` | every hour |
 | `day 9am` · `day 17:30` | daily at that time |
-| `monday 10:00` · `friday 6pm` | weekly on that day |
+| `day 9am,6pm` | daily, several times |
+| `weekdays 9:30` · `weekends 11am` | Mon–Fri / Sat+Sun |
+| `monday 10:00` · `monday,thursday 6pm` | weekly on those days |
 
 ## Commands
 
 ```
-every <schedule> [--name NAME] -- <command>   schedule it
+every <schedule> [--name NAME] [--quiet] -- <command>   schedule it
 every list                                    status of everything
 every log <name> [-n N]                       output of recent runs
+every run <name>                              run it right now, see the output
 every pause / resume <name>                   stop / start scheduling
 every rm <name>                               remove (logs are kept)
 every doctor                                  why isn't it running?
 ```
+
+Failed runs pop a macOS notification (silence it per task with `--quiet`).
 
 ## Fine print
 

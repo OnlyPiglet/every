@@ -26,7 +26,24 @@ module Every
 
       append_log(name, started, exit_code, duration, out)
       append_run(name, started, exit_code, duration)
+      notify_failure(name, exit_code) if exit_code != 0 && !task["quiet"]
+
+      if $stdout.tty?
+        print out
+        puts "— exit #{exit_code} in #{duration}s (logged: every log #{name})"
+      end
       exit exit_code
+    end
+
+    # macOS notification so failures don't die silently in a log file.
+    def notify_failure(name, exit_code)
+      msg = "#{name} failed (exit #{exit_code}) — every log #{name}"
+      script = "display notification \"#{osa_esc(msg)}\" with title \"every\""
+      system("osascript", "-e", script, out: File::NULL, err: File::NULL)
+    end
+
+    def osa_esc(s)
+      s.gsub("\\", "\\\\\\\\").gsub('"', '\"')
     end
 
     # Probe actual readability: under launchd, TCC-protected dirs (Documents…)

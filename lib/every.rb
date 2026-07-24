@@ -5,7 +5,7 @@ require "open3"
 require "rbconfig"
 
 module Every
-  VERSION = "0.1.0".freeze
+  VERSION = "0.2.0".freeze
 
   ROOT = File.expand_path("..", __dir__)
   BIN  = File.join(ROOT, "bin", "every")

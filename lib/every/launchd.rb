@@ -30,13 +30,16 @@ module Every
           "  <key>StartInterval</key>\n" \
           "  <integer>#{schedule.interval}</integer>"
         else
-          lines = []
-          lines << "    <key>Hour</key><integer>#{schedule.hour}</integer>"
-          lines << "    <key>Minute</key><integer>#{schedule.minute}</integer>"
-          if schedule.kind == :weekly
-            lines << "    <key>Weekday</key><integer>#{schedule.weekday}</integer>"
+          dicts = schedule.entries.map do |e|
+            lines = []
+            if e["weekday"]
+              lines << "      <key>Weekday</key><integer>#{e['weekday']}</integer>"
+            end
+            lines << "      <key>Hour</key><integer>#{e['hour']}</integer>"
+            lines << "      <key>Minute</key><integer>#{e['minute']}</integer>"
+            "    <dict>\n#{lines.join("\n")}\n    </dict>"
           end
-          "  <key>StartCalendarInterval</key>\n  <dict>\n#{lines.join("\n")}\n  </dict>"
+          "  <key>StartCalendarInterval</key>\n  <array>\n#{dicts.join("\n")}\n  </array>"
         end
 
       <<~XML

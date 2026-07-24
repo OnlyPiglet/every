@@ -39,6 +39,7 @@ module Every
         raise ArgumentError, "--name needs a value" if explicit_name.nil?
         pre = pre[0...i] + (pre[(i + 2)..-1] || [])
       end
+      quiet = !pre.delete("--quiet").nil?
 
       schedule = Schedule.parse(pre)
       cmd = cmd_tokens.join(" ")
@@ -58,7 +59,8 @@ module Every
                       "schedule" => schedule.to_h,
                       "cwd" => Dir.pwd,
                       "created_at" => Time.now.iso8601,
-                      "paused" => false)
+                      "paused" => false,
+                      "quiet" => quiet)
       Runtime.ensure!
       Launchd.write_plist(name, schedule)
       Launchd.bootstrap(name)
@@ -207,15 +209,19 @@ module Every
         add a task:
           every 15m -- ~/bin/sync-notes.sh
           every hourly -- brew update
-          every day 9am -- ruby ~/bin/report.rb
-          every monday 10:00 --name weekly-report -- ~/bin/weekly.sh
+          every day 9am,6pm -- ruby ~/bin/report.rb
+          every weekdays 9:30 -- ~/bin/standup-prep.sh
+          every monday,thursday 10:00 --name reports -- ~/bin/weekly.sh
 
+          Flags: --name NAME (task name), --quiet (no notification on failure).
           The command runs through your login shell (PATH works), in the
           directory where you added it. Missed calendar runs fire on wake.
+          Failed runs pop a macOS notification unless --quiet.
 
         manage:
           every list                what's scheduled, last/next run, ok/FAIL
           every log <name> [-n N]   output of recent runs
+          every run <name>          run it right now (prints output, logs too)
           every pause <name>        stop scheduling (keeps the task)
           every resume <name>       start again
           every rm <name>           remove task (logs are kept)

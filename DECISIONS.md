@@ -27,6 +27,18 @@ Dated log; append, don't rewrite.
   (Documents/Desktop/Downloads), so an agent pointing into the project checkout
   dies before our code loads. The copy is refreshed on every add/resume;
   `doctor` checks for its presence and warns about TCC-protected task cwd.
+- **2026-07-24 (v0.2) — Calendar schedules are entry lists.** `Schedule` normalizes
+  every calendar form (`day 9am,6pm`, `weekdays 9:30`, `monday,thursday 10:00`) into a
+  list of `{weekday?, hour, minute}` entries → launchd `StartCalendarInterval` array.
+  `from_h` migrates pre-0.2 `daily`/`weekly` task records, so existing tasks survive.
+  Bounded intervals ("every 5m, 9–18, weekdays") deliberately NOT supported — launchd
+  has no such primitive and faking it (108 dicts / runner-side guard) isn't worth it yet.
+- **2026-07-24 (v0.2) — Failures notify by default.** A failed run fires a macOS
+  notification via `osascript` (`--quiet` per task to opt out). Rationale: the product
+  is visibility; a FAIL that waits for the user to run `list` is still silence.
 - **2026-07-24 — No git yet.** Working account on this machine is a work
-  account; repo stays local until published from the right identity
-  (bohdan-ai-gh).
+  account; repo stays local until published from the right identity.
+- **2026-07-24 — Published (supersedes "No git yet"):**
+  github.com/Serhii-Leniv/every, authored as Serhii-Leniv via a dedicated
+  `github-serhii` ssh alias; repo-local identity + pre-commit/pre-push guard
+  hooks prevent any other account from committing or pushing here.

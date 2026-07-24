@@ -1,5 +1,9 @@
 # every
 
+[![test](https://github.com/Serhii-Leniv/every/actions/workflows/test.yml/badge.svg)](https://github.com/Serhii-Leniv/every/actions/workflows/test.yml)
+[![license: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+![dependencies: zero](https://img.shields.io/badge/dependencies-zero-blue.svg)
+
 **Schedule anything on your Mac. Actually know it ran.**
 
 cron never tells you it silently skipped your backup. launchd wants 40 lines of
@@ -40,6 +44,12 @@ Apple deprecated cron on macOS years ago. `every` is launchd — with a human
 interface and a memory.
 
 ## Install
+
+```bash
+brew install serhii-leniv/tap/every
+```
+
+or from source:
 
 ```bash
 git clone https://github.com/Serhii-Leniv/every.git

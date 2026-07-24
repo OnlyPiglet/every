@@ -1,0 +1,17 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      # System Ruby (2.6) is the compatibility floor — test against it.
+      - name: Syntax check
+        run: /usr/bin/ruby -cw bin/every lib/every.rb lib/every/*.rb
+      - name: Unit tests
+        run: /usr/bin/ruby test/schedule_test.rb

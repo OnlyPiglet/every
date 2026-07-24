@@ -1,10 +1,17 @@
-# every
+```text
+ ___ _  _____ ______ __
+/ -_) |/ / -_) __/ // /
+\__/|___/\__/_/  \_, /
+                /___/
+```
 
 [![test](https://github.com/Serhii-Leniv/every/actions/workflows/test.yml/badge.svg)](https://github.com/Serhii-Leniv/every/actions/workflows/test.yml)
 [![license: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 ![dependencies: zero](https://img.shields.io/badge/dependencies-zero-blue.svg)
 
 **Schedule anything on your Mac. Actually know it ran.**
+
+<img src="demo.gif" width="720" alt="every demo: schedule a task in one phrase, see ok/FAIL status, read run logs">
 
 cron never tells you it silently skipped your backup. launchd wants 40 lines of
 XML before ignoring you too. `every` is one human phrase — and a straight

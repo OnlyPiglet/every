@@ -1,82 +1,81 @@
 # every
 
-Schedule anything on your Mac, humanely. `every` is a tiny CLI that turns one
-human phrase into a correctly configured `launchd` agent — and, unlike raw
-launchd/cron, it always shows you **whether the thing actually ran** and what
-it printed.
+**Schedule anything on your Mac. Actually know it ran.**
+
+cron never tells you it silently skipped your backup. launchd wants 40 lines of
+XML before ignoring you too. `every` is one human phrase — and a straight
+answer to *"did it run?"*.
 
 ```bash
-every 15m -- ~/bin/sync-notes.sh
-every hourly -- brew update
-every day 9am -- ruby ~/bin/report.rb
-every monday 10:00 --name weekly-report -- ~/bin/weekly.sh
-
-every list          # what's scheduled · last run · ok/FAIL · next run
-every log brew      # stdout/stderr of recent runs
-every doctor        # plain-language diagnosis of why something isn't running
-every pause brew    # stop scheduling, keep the task
-every resume brew
-every rm brew       # remove (logs are kept)
+every day 9am -- brew update
+every 30m -- '~/bin/sync-notes.sh'
+every monday 10:00 -- './weekly-report.sh'
 ```
 
-No dependencies — pure Ruby stdlib, runs on the system Ruby that ships with
-macOS. Nothing to `gem install`.
+```
+$ every list
+NAME           SCHEDULE      LAST          STATUS   NEXT
+brew           day 9am       24 Jul 09:00  ok       25 Jul 09:00
+sync-notes     30m           24 Jul 14:30  ok       24 Jul 15:00
+weekly-report  monday 10:00  21 Jul 10:00  FAIL(1)  28 Jul 10:00
 
-## Install (local, for now)
+$ every log weekly-report     # exact output of the run that broke
+$ every doctor                # plain-language diagnosis
+```
+
+## vs cron · vs raw launchd
+
+|  | cron | raw launchd | **every** |
+|---|---|---|---|
+| Add a job | `30 9 * * 1` in `crontab -e` | ~40 lines of XML + `launchctl` | `every monday 9:30 -- cmd` |
+| Did it run? | silence | silence | `every list` → ok / FAIL |
+| What did it print? | a local mailbox nobody reads | wire log paths yourself | `every log <name>` |
+| Mac was asleep at 9am | run **lost forever** | runs on wake | runs on wake — and you can verify it |
+| PATH | minimal, brew tools "not found" | minimal | your login shell, as in your terminal |
+| Working directory | `$HOME`, always | configure it yourself | the directory you added the task from |
+| When it breaks | Console.app archaeology | Console.app archaeology | `every doctor` tells you why |
+
+Apple deprecated cron on macOS years ago. `every` is launchd — with a human
+interface and a memory.
+
+## Install
 
 ```bash
-chmod +x ~/Documents/Projects/every/bin/every
-ln -s ~/Documents/Projects/every/bin/every ~/bin/every   # or anywhere on PATH
+git clone https://github.com/Serhii-Leniv/every.git
+ln -s "$PWD/every/bin/every" /usr/local/bin/every
 ```
 
-## Schedule syntax
+Zero dependencies. Runs on the Ruby already inside macOS.
 
-| Phrase | Meaning |
+## Schedules
+
+| You type | It means |
 |---|---|
-| `90s`, `15m`, `2h` | fixed interval (min 10s) |
+| `90s` · `15m` · `2h` | fixed interval |
 | `hourly` | every hour |
-| `day 9am`, `day 17:30` | daily at that time |
-| `monday 10:00`, `friday 6pm` | weekly on that day |
+| `day 9am` · `day 17:30` | daily at that time |
+| `monday 10:00` · `friday 6pm` | weekly on that day |
 
-## How it works
+## Commands
 
-- Each task becomes `~/Library/LaunchAgents/com.every.<name>.plist`, loaded via
-  `launchctl bootstrap`. The agent invokes `every run <name>`.
-- The agent runs a **copy** of every from `~/.local/share/every/runtime/`
-  (refreshed on add/resume). launchd-spawned processes can't read
-  TCC-protected folders (Documents/Desktop/Downloads), so executing from a
-  project checkout inside Documents would fail with "Operation not permitted".
-- `every run` executes your command through **your login shell**
-  (`/bin/zsh -lc`), in **the directory where you added the task** — so PATH and
-  relative paths behave like your terminal, dodging launchd's classic PATH trap.
-- Output and exit codes are captured to `~/.local/share/every/logs/<name>.log`
-  and `~/.local/share/every/runs/<name>.jsonl` — that's what powers
-  `list`/`log`/`doctor`.
-
-## Good to know
-
-- **Quoting:** your shell strips quotes before `every` sees the command. Wrap
-  anything with flags-in-quotes or pipes in ONE quoted string:
-  `every day 9am -- 'psql -c "select 1" | tee ~/log.txt'`.
-
-- **Sleep:** interval tasks run only while the Mac is awake. Missed *calendar*
-  tasks (`day 9am`) fire once when the Mac next wakes — launchd coalesces them.
-- **PATH:** the login shell reads `~/.zprofile`, not `~/.zshrc`. If a command
-  works in your terminal but `doctor` says it's not resolvable, move its PATH
-  setup to `~/.zprofile` or use an absolute path.
-- **Full Disk Access:** if a task touches protected folders (Documents,
-  Desktop…) and logs show `Operation not permitted`, grant Full Disk Access to
-  the ruby binary in System Settings → Privacy & Security.
-- Logs rotate at 5 MB (previous file kept as `.log.old`).
-
-## Uninstall
-
-```bash
-every list            # then `every rm <name>` for each task
-rm -rf ~/.local/share/every
+```
+every <schedule> [--name NAME] -- <command>   schedule it
+every list                                    status of everything
+every log <name> [-n N]                       output of recent runs
+every pause / resume <name>                   stop / start scheduling
+every rm <name>                               remove (logs are kept)
+every doctor                                  why isn't it running?
 ```
 
-## Status
+## Fine print
 
-v0.1.0 — local project, macOS only. Linux (systemd user timers) is the planned
-v2. See `DECISIONS.md` for design choices.
+- **Quoting:** your shell strips quotes first — wrap complex commands in one
+  string: `every day 9am -- 'psql -c "select 1" | tee ~/log.txt'`.
+- Tasks live in `~/Library/LaunchAgents/com.every.<name>.plist`; runs are
+  recorded under `~/.local/share/every/` (logs rotate at 5 MB). launchd can't
+  execute from TCC-protected folders, so agents run a copy of `every` from the
+  data dir — see [DECISIONS.md](DECISIONS.md) for design notes.
+- macOS only for now; Linux (systemd user timers) is the planned v2.
+- Uninstall: `every rm` each task, then `rm -rf ~/.local/share/every`.
+
+MIT © [Serhii Leniv](https://github.com/Serhii-Leniv)

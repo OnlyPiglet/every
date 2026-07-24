@@ -29,6 +29,9 @@ These are real limitations, not hidden ones:
 - **Staleness watchdog** — warn when a task hasn't had a *successful* run in N
   days/intervals (a backup that silently stopped is the exact pain `every`
   exists to kill). Builds on the existing run ledger.
+- **`every edit <name>`** — change a task's schedule or command in place. Today
+  you must `every rm` + re-add with the same name (works cleanly, but it's an
+  extra step and easy to forget the original flags). **[good first issue]**
 - **`every run --all` / run-on-add** — trigger a task once immediately so you
   can confirm it works before trusting the schedule.
 - **Richer failure notifications** — include the last error line, click to open

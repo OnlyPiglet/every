@@ -6,6 +6,8 @@
 
 <p align="center"><strong>Schedule anything on your Mac. Actually know it ran.</strong></p>
 
+<p align="center"><sub>launchd on macOS · systemd on Linux (beta) · zero dependencies</sub></p>
+
 <p align="center">
   <a href="https://github.com/Serhii-Leniv/every/actions/workflows/test.yml"><img src="https://github.com/Serhii-Leniv/every/actions/workflows/test.yml/badge.svg" alt="test"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="license: MIT"></a>

@@ -38,13 +38,20 @@ module Every
       save
     end
 
+    # Scan from the end for the last *complete* record. A crash mid-append can
+    # leave a torn final line; skip it and report the last real run rather than
+    # falsely showing "no runs".
     def last_run(name)
       path = File.join(RUNS_DIR, "#{name}.jsonl")
       return nil unless File.exist?(path)
-      line = nil
-      File.foreach(path) { |l| line = l unless l.strip.empty? }
-      line && JSON.parse(line)
-    rescue JSON::ParserError
+      File.readlines(path).reverse_each do |l|
+        next if l.strip.empty?
+        begin
+          return JSON.parse(l)
+        rescue JSON::ParserError
+          next
+        end
+      end
       nil
     end
 

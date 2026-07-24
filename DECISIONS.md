@@ -38,6 +38,16 @@ Dated log; append, don't rewrite.
   is visibility; a FAIL that waits for the user to run `list` is still silence.
 - **2026-07-24 — No git yet.** Working account on this machine is a work
   account; repo stays local until published from the right identity.
+- **2026-07-24 — Lifecycle hardening (found by an operational/round-3 harness).**
+  Four fixes: (1) the runtime copy is made ONLY from TCC-protected folders
+  (`Runtime.needs_copy?`); from Homebrew/`~/code` the scheduler points at the
+  live launcher (`File.expand_path($PROGRAM_NAME)`), so `brew upgrade` reaches
+  scheduled runs instead of freezing stale code — verified end-to-end with a
+  real launchd fire from a non-TCC install; (2) `last_run` scans from the end
+  for the last *complete* JSONL record, so a crash-torn trailing line no longer
+  shows "no runs"; (3) run duration uses `CLOCK_MONOTONIC`, immune to NTP/DST
+  wall-clock jumps; (4) task names bounded to 100 chars so the unit filename
+  can't exceed the 255-byte limit (was an ENAMETOOLONG crash).
 - **2026-07-24 — Adversarial hardening (found by a hostile-input harness).**
   Four real fixes: (1) `--name ""` and traversal-y names now rejected/sanitized
   before touching the filesystem; (2) `Store#save` writes tmp+fsync+rename so a

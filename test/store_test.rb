@@ -37,4 +37,18 @@ class StoreTest < Minitest::Test
     File.write(Every::Store::FILE, "{ not valid json")
     assert_raises(SystemExit) { Every::Store.load }
   end
+
+  # A crash mid-append leaves a torn final line; last_run must report the last
+  # COMPLETE run, not fall back to nil ("no runs").
+  def test_last_run_skips_torn_trailing_line
+    FileUtils.mkdir_p(Every::RUNS_DIR)
+    path = File.join(Every::RUNS_DIR, "torn.jsonl")
+    File.open(path, "w") do |f|
+      f.puts JSON.generate("ts" => "2026-07-01T09:00:00+03:00", "exit" => 0)
+      f.puts JSON.generate("ts" => "2026-07-02T09:00:00+03:00", "exit" => 7)
+      f.write('{"ts":"2026-07-03T09:00:00+03:00","exit":0,"du') # torn
+    end
+    last = Every::Store.new("tasks" => {}).last_run("torn")
+    assert_equal 7, last["exit"]
+  end
 end

@@ -1,5 +1,9 @@
 module Every
   class CLI
+    # Bounded so the generated unit filename (com.every.<name>.plist /
+    # every-<name>.timer) stays under the 255-byte filesystem limit.
+    MAX_NAME = 100
+
     def initialize(argv)
       @argv = argv
     end
@@ -58,6 +62,9 @@ module Every
         if name.empty?
           raise ArgumentError, "--name #{explicit_name.inspect} is empty after sanitizing " \
                                "(names allow a-z 0-9 . _ -)"
+        end
+        if name.length > MAX_NAME
+          raise ArgumentError, "--name is too long (max #{MAX_NAME} chars)"
         end
         if store[name]
           raise ArgumentError,
@@ -195,8 +202,8 @@ module Every
     # ---- helpers ----
 
     def derive_name(cmd, store)
-      base = sanitize(File.basename(cmd.strip.split(/\s+/).first.to_s))
-      base = "task" if base.empty?
+      base = sanitize(File.basename(cmd.strip.split(/\s+/).first.to_s))[0, MAX_NAME]
+      base = "task" if base.nil? || base.empty?
       name = base
       i = 2
       while store[name]

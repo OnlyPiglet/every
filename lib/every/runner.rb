@@ -28,10 +28,13 @@ module Every
       FileUtils.mkdir_p(RUNS_DIR)
 
       started = Time.now
+      mono = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       dir, note = workdir(task)
       out, exit_code = capture(task["cmd"], dir, task["timeout"])
       out = note + out if note
-      duration = (Time.now - started).round(2)
+      # Monotonic clock: an NTP/DST wall-clock jump mid-run can't make this
+      # negative. The ledger timestamp still uses wall-clock `started`.
+      duration = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - mono).round(2)
 
       append_log(name, started, exit_code, duration, out)
       append_run(name, started, exit_code, duration)

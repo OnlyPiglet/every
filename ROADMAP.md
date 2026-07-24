@@ -15,7 +15,8 @@ These are real limitations, not hidden ones:
   launchd primitive and isn't supported. Would need a runner-side time-window
   guard.
 - **Log rotation is crude** — a single 5 MB cutoff to `.log.old`. No
-  compression, no retention policy.
+  compression, no retention policy. (The run *ledger* is bounded to the last
+  500 runs; the detailed `.log` is what's still coarse.)
 - **Schedule DSL is small.** No "last day of month", no "every other week", no
   cron expressions (by design — but some of these are worth adding).
 - **Long-term durability is unproven.** The tool is new; behavior across macOS

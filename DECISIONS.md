@@ -38,6 +38,14 @@ Dated log; append, don't rewrite.
   is visibility; a FAIL that waits for the user to run `list` is still silence.
 - **2026-07-24 — No git yet.** Working account on this machine is a work
   account; repo stays local until published from the right identity.
+- **2026-07-24 — Run ledger is bounded (found by a stability stress test).**
+  A long-term harness (100k runs, calendar boundaries, DST, log rotation, 40x
+  add/rm churn, 200-task store) surfaced one real degradation: `runs/*.jsonl`
+  grew unbounded, slowing `list` linearly over months. Fixed: `trim_runs`
+  caps the file at RUN_TRIM_BYTES (~256 KB) after each append, rewriting to the
+  last MAX_RUN_RECORDS (500). Guarantee is bounded file *size*, not exact line
+  count. Everything else (calendar math across year/leap/DST — display only,
+  launchd fires the real time; log rotation; churn; store round-trip) passed.
 - **2026-07-24 — Backend abstraction + Linux beta.** `Backend.current`
   dispatches launchd (darwin) / systemd user timers (linux); both implement
   write/enable/disable/delete_units/loaded?/unit_path. systemd side:

@@ -4,6 +4,12 @@ module Every
   # captures all output, and records the run.
   module Runner
     MAX_LOG_BYTES = 5 * 1024 * 1024
+    # The run ledger is a rolling window: enough history for status and a
+    # staleness watchdog, but bounded so a task firing every minute for years
+    # can't grow it without limit (and keep `list` fast). Detailed output lives
+    # in the separately-rotated .log.
+    MAX_RUN_RECORDS = 500
+    RUN_TRIM_BYTES = 256 * 1024
 
     module_function
 
@@ -82,11 +88,22 @@ module Every
     end
 
     def append_run(name, started, exit_code, duration)
-      File.open(File.join(RUNS_DIR, "#{name}.jsonl"), "a") do |f|
+      path = File.join(RUNS_DIR, "#{name}.jsonl")
+      File.open(path, "a") do |f|
         f.puts JSON.generate("ts" => started.iso8601,
                              "exit" => exit_code,
                              "dur" => duration)
       end
+      trim_runs(path)
+    end
+
+    # Amortized-cheap bound: only touched once the file crosses the byte cap,
+    # then rewritten to the last MAX_RUN_RECORDS lines.
+    def trim_runs(path)
+      return if File.size(path) <= RUN_TRIM_BYTES
+      lines = File.readlines(path)
+      return if lines.length <= MAX_RUN_RECORDS
+      File.write(path, lines.last(MAX_RUN_RECORDS).join)
     end
 
     def rotate(path)

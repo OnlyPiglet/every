@@ -41,12 +41,24 @@ module Every
       end
       quiet = !pre.delete("--quiet").nil?
 
+      timeout = nil
+      if (ti = pre.index("--timeout"))
+        raw = pre[ti + 1]
+        raise ArgumentError, "--timeout needs a duration (e.g. 30m, 2h)" if raw.nil?
+        timeout = parse_duration(raw)
+        pre = pre[0...ti] + (pre[(ti + 2)..-1] || [])
+      end
+
       schedule = Schedule.parse(pre)
       cmd = cmd_tokens.join(" ")
       store = Store.load
 
       if explicit_name
         name = sanitize(explicit_name)
+        if name.empty?
+          raise ArgumentError, "--name #{explicit_name.inspect} is empty after sanitizing " \
+                               "(names allow a-z 0-9 . _ -)"
+        end
         if store[name]
           raise ArgumentError,
                 "task #{name.inspect} already exists (every rm #{name}, or pick another --name)"
@@ -55,12 +67,14 @@ module Every
         name = derive_name(cmd, store)
       end
 
-      store.add(name, "cmd" => cmd,
-                      "schedule" => schedule.to_h,
-                      "cwd" => Dir.pwd,
-                      "created_at" => Time.now.iso8601,
-                      "paused" => false,
-                      "quiet" => quiet)
+      attrs = { "cmd" => cmd,
+                "schedule" => schedule.to_h,
+                "cwd" => Dir.pwd,
+                "created_at" => Time.now.iso8601,
+                "paused" => false,
+                "quiet" => quiet }
+      attrs["timeout"] = timeout if timeout
+      store.add(name, attrs)
       Runtime.ensure!
       backend.write(name, schedule)
       backend.enable(name)
@@ -196,6 +210,12 @@ module Every
       s.to_s.downcase.gsub(/[^a-z0-9_.-]/, "-").gsub(/\A-+|-+\z/, "")
     end
 
+    def parse_duration(raw)
+      m = raw.to_s.match(/\A(\d+)(s|m|h)\z/)
+      raise ArgumentError, "bad duration #{raw.inspect} (e.g. 90s, 30m, 2h)" unless m
+      m[1].to_i * { "s" => 1, "m" => 60, "h" => 3600 }[m[2]]
+    end
+
     def backend
       Backend.current
     end
@@ -216,7 +236,9 @@ module Every
           every weekdays 9:30 -- ~/bin/standup-prep.sh
           every monday,thursday 10:00 --name reports -- ~/bin/weekly.sh
 
-          Flags: --name NAME (task name), --quiet (no notification on failure).
+          Flags: --name NAME, --quiet (no failure notification),
+                 --timeout 30m (kill a run that overruns, so it can't block
+                 the next one).
           The command runs through your login shell (PATH works), in the
           directory where you added it. Missed calendar runs fire on wake.
           Failed runs pop a macOS notification unless --quiet.

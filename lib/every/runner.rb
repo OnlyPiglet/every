@@ -10,6 +10,10 @@ module Every
     # in the separately-rotated .log.
     MAX_RUN_RECORDS = 500
     RUN_TRIM_BYTES = 256 * 1024
+    # Captured output is bounded so a chatty task can't OOM the run: keep the
+    # first and last HALF_OUTPUT bytes (errors show up at both ends), drop the
+    # middle. The full stream still flows to the command; we just don't hold it.
+    HALF_OUTPUT = 32 * 1024
 
     module_function
 
@@ -25,9 +29,8 @@ module Every
 
       started = Time.now
       dir, note = workdir(task)
-      out, status = Open3.capture2e(*login_shell, task["cmd"], chdir: dir)
+      out, exit_code = capture(task["cmd"], dir, task["timeout"])
       out = note + out if note
-      exit_code = status.exitstatus || 1
       duration = (Time.now - started).round(2)
 
       append_log(name, started, exit_code, duration, out)
@@ -39,6 +42,59 @@ module Every
         puts "— exit #{exit_code} in #{duration}s (logged: every log #{name})"
       end
       exit exit_code
+    end
+
+    # Execute the command, capturing bounded output and enforcing an optional
+    # timeout. The child runs in its own process group so a timeout kills the
+    # whole tree (the login shell plus anything it spawned), never leaving a
+    # hung process to block the next scheduled run.
+    def capture(cmd, dir, timeout_sec)
+      require "timeout"
+      head = "".b
+      tail = "".b
+      dropped = 0
+      status = nil
+
+      Open3.popen2e(*login_shell, cmd, chdir: dir, pgroup: true) do |stdin, out, wait|
+        stdin.close
+        pid = wait.pid
+        drain = lambda do
+          while (chunk = out.read(16 * 1024))
+            if head.bytesize < HALF_OUTPUT
+              head << chunk
+            else
+              tail << chunk
+              if tail.bytesize > HALF_OUTPUT
+                over = tail.bytesize - HALF_OUTPUT
+                dropped += over
+                tail = tail.byteslice(over, HALF_OUTPUT)
+              end
+            end
+          end
+        end
+
+        begin
+          timeout_sec ? Timeout.timeout(timeout_sec) { drain.call } : drain.call
+          status = wait.value
+        rescue Timeout::Error
+          kill_group(pid)
+          status = (wait.value rescue nil)
+          head << "\n[every: killed after #{timeout_sec}s timeout]\n"
+        end
+      end
+
+      body = head.dup
+      body << "\n… [#{dropped} bytes truncated] …\n" << tail if dropped.positive?
+      [body, status&.exitstatus || 124]
+    end
+
+    def kill_group(pid)
+      pgid = Process.getpgid(pid)
+      Process.kill("-TERM", pgid)
+      sleep 0.3
+      Process.kill("-KILL", pgid)
+    rescue Errno::ESRCH, Errno::EPERM
+      nil
     end
 
     # Run through the user's login shell so PATH matches their terminal.

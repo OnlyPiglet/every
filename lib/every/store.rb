@@ -50,9 +50,20 @@ module Every
 
     private
 
+    # Atomic write: a crash mid-write must never truncate the task registry.
+    # Write a temp file, fsync, then rename over the target (atomic on the same
+    # filesystem).
     def save
       FileUtils.mkdir_p(DATA_DIR)
-      File.write(FILE, JSON.pretty_generate(@data) + "\n")
+      tmp = "#{FILE}.tmp.#{Process.pid}"
+      File.open(tmp, "w") do |f|
+        f.write(JSON.pretty_generate(@data) + "\n")
+        f.flush
+        f.fsync
+      end
+      File.rename(tmp, FILE)
+    ensure
+      File.delete(tmp) if tmp && File.exist?(tmp)
     end
   end
 end

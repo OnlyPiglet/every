@@ -103,6 +103,11 @@ Failed runs pop a macOS notification (silence it per task with `--quiet`).
 
 - **Quoting:** your shell strips quotes first — wrap complex commands in one
   string: `every day 9am -- 'psql -c "select 1" | tee ~/log.txt'`.
+- **Timeouts:** add `--timeout 30m` to kill a run that overruns — otherwise a
+  task that hangs will block its own next run (the OS won't start a second copy
+  of the same task). The kill takes the whole process tree with it.
+- **Output** is captured but bounded (first + last 32 KB per run), so a chatty
+  command can't blow up memory or fill the disk.
 - Tasks live in `~/Library/LaunchAgents/com.every.<name>.plist`; runs are
   recorded under `~/.local/share/every/` (logs rotate at 5 MB). launchd can't
   execute from TCC-protected folders, so agents run a copy of `every` from the

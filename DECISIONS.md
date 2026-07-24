@@ -38,6 +38,15 @@ Dated log; append, don't rewrite.
   is visibility; a FAIL that waits for the user to run `list` is still silence.
 - **2026-07-24 — No git yet.** Working account on this machine is a work
   account; repo stays local until published from the right identity.
+- **2026-07-24 — Adversarial hardening (found by a hostile-input harness).**
+  Four real fixes: (1) `--name ""` and traversal-y names now rejected/sanitized
+  before touching the filesystem; (2) `Store#save` writes tmp+fsync+rename so a
+  crash mid-write can't truncate the task registry; (3) captured output is
+  bounded to first+last 32 KB (`Runner.capture` replaces `capture2e`) so a
+  chatty task can't OOM; (4) optional `--timeout` kills an overrunning run —
+  and its whole process group (`pgroup: true`) — so a hung task can't block its
+  own next run. Command strings never reach plist XML (only sanitized name +
+  escaped paths do), so injection/XML-breakout attempts already failed safely.
 - **2026-07-24 — Run ledger is bounded (found by a stability stress test).**
   A long-term harness (100k runs, calendar boundaries, DST, log rotation, 40x
   add/rm churn, 200-task store) surfaced one real degradation: `runs/*.jsonl`

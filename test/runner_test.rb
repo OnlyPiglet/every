@@ -44,4 +44,38 @@ class RunnerTest < Minitest::Test
     Every::Runner.trim_runs(path)
     assert_equal 10, File.readlines(path).length
   end
+
+  # A chatty task must not be held whole in memory — output comes back bounded.
+  def test_capture_bounds_output
+    out, code = Every::Runner.capture("yes xxxxxxxx | head -c 300000", Dir.home, nil)
+    assert_equal 0, code
+    assert out.bytesize < 100 * 1024, "output not bounded: #{out.bytesize} bytes"
+    assert_includes out, "truncated"
+  end
+
+  # Small output passes through verbatim, no truncation marker.
+  def test_capture_small_output_verbatim
+    out, code = Every::Runner.capture("echo hello there", Dir.home, nil)
+    assert_equal 0, code
+    assert_includes out, "hello there"
+    refute_includes out, "truncated"
+  end
+
+  # A hung task is killed at the timeout so it can't block the next run.
+  def test_capture_timeout_kills
+    t0 = Time.now
+    out, code = Every::Runner.capture("sleep 30", Dir.home, 1)
+    assert_operator code, :!=, 0
+    assert_operator (Time.now - t0), :<, 5.0, "timeout did not fire promptly"
+    assert_includes out, "timeout"
+  end
+
+  # Timeout must kill the whole process tree, not just the shell.
+  def test_capture_timeout_kills_children
+    marker = File.join(ENV["EVERY_HOME"], "child-alive")
+    # A backgrounded child that would outlive a naive shell-only kill.
+    Every::Runner.capture("(sleep 30 && touch #{marker}) & sleep 30", Dir.home, 1)
+    sleep 2
+    refute File.exist?(marker), "orphaned child survived the timeout kill"
+  end
 end

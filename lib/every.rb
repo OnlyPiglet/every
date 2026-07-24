@@ -1,10 +1,8 @@
 require "json"
 require "fileutils"
 require "time"
-require "date"
 require "open3"
 require "rbconfig"
-require "shellwords"
 
 module Every
   VERSION = "0.1.2".freeze
@@ -20,6 +18,7 @@ module Every
   AGENTS_DIR = File.expand_path("~/Library/LaunchAgents")
 end
 
+require "every/tail"
 require "every/schedule"
 require "every/store"
 require "every/runtime"

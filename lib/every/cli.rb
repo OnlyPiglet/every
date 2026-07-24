@@ -11,7 +11,7 @@ module Every
     def run
       case @argv.first
       when nil, "help", "-h", "--help"   then help
-      when "version", "--version"        then puts "every #{VERSION}"
+      when "version", "--version"        then version
       when "list", "ls"                  then list
       when "log"                         then log(@argv[1])
       when "rm", "remove"                then rm(@argv[1])
@@ -232,9 +232,18 @@ module Every
       exit 64
     end
 
+    def version
+      puts "every #{VERSION}"
+      puts TAGLINE
+      puts HOMEPAGE
+    end
+
     def help
       puts <<~TXT
-        every #{VERSION} — schedule anything on your Mac, humanely
+        every #{VERSION} — #{TAGLINE}
+        #{HOMEPAGE}
+
+        schedule anything on your Mac, humanely
 
         add a task:
           every 15m -- ~/bin/sync-notes.sh
@@ -260,7 +269,7 @@ module Every
           every doctor              explain why something isn't running
 
         data:  #{DATA_DIR}
-        agents: ~/Library/LaunchAgents/com.every.<name>.plist
+        more:  #{HOMEPAGE}
       TXT
     end
   end

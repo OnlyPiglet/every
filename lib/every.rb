@@ -6,6 +6,8 @@ require "rbconfig"
 
 module Every
   VERSION = "0.1.0".freeze
+  HOMEPAGE = "https://github.com/Serhii-Leniv/every".freeze
+  TAGLINE = "humane task scheduler for macOS (launchd) and Linux (systemd, beta)".freeze
 
   ROOT = File.expand_path("..", __dir__)
   BIN  = File.join(ROOT, "bin", "every")

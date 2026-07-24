@@ -1,9 +1,8 @@
-```text
- ___ _  _____ ______ __
-/ -_) |/ / -_) __/ // /
-\__/|___/\__/_/  \_, /
-                /___/
-```
+<p align="center">
+  <img src="mascot.svg" width="150" alt="every mascot — a pixel-art alarm clock whose face shows a green check">
+</p>
+
+# every
 
 [![test](https://github.com/Serhii-Leniv/every/actions/workflows/test.yml/badge.svg)](https://github.com/Serhii-Leniv/every/actions/workflows/test.yml)
 [![license: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)

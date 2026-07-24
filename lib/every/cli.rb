@@ -62,8 +62,8 @@ module Every
                       "paused" => false,
                       "quiet" => quiet)
       Runtime.ensure!
-      Launchd.write_plist(name, schedule)
-      Launchd.bootstrap(name)
+      backend.write(name, schedule)
+      backend.enable(name)
 
       puts "✓ scheduled #{name}: #{schedule.raw} — #{cmd}"
       nxt = schedule.next_run
@@ -145,9 +145,8 @@ module Every
         warn "every: no task #{name.inspect}"
         exit 1
       end
-      Launchd.bootout(name)
-      plist = Launchd.plist_path(name)
-      File.delete(plist) if File.exist?(plist)
+      backend.disable(name)
+      backend.delete_units(name)
       store.remove(name)
       puts "✓ removed #{name} (logs kept in #{LOG_DIR})"
     end
@@ -159,7 +158,7 @@ module Every
         warn "every: no task #{name.inspect}"
         exit 1
       end
-      Launchd.bootout(name)
+      backend.disable(name)
       store.update(name, "paused" => true)
       puts "✓ paused #{name}"
     end
@@ -173,8 +172,8 @@ module Every
         exit 1
       end
       Runtime.ensure!
-      Launchd.write_plist(name, Schedule.from_h(task["schedule"]))
-      Launchd.bootstrap(name)
+      backend.write(name, Schedule.from_h(task["schedule"]))
+      backend.enable(name)
       store.update(name, "paused" => false)
       puts "✓ resumed #{name}"
     end
@@ -195,6 +194,10 @@ module Every
 
     def sanitize(s)
       s.to_s.downcase.gsub(/[^a-z0-9_.-]/, "-").gsub(/\A-+|-+\z/, "")
+    end
+
+    def backend
+      Backend.current
     end
 
     def usage!(msg)

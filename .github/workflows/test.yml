@@ -6,7 +6,7 @@ on:
   pull_request:
 
 jobs:
-  test:
+  macos:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -14,4 +14,30 @@ jobs:
       - name: Syntax check
         run: /usr/bin/ruby -cw bin/every lib/every.rb lib/every/*.rb
       - name: Unit tests
-        run: /usr/bin/ruby test/schedule_test.rb
+        run: |
+          /usr/bin/ruby test/schedule_test.rb
+          /usr/bin/ruby test/systemd_test.rb
+
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax check
+        run: ruby -cw bin/every lib/every.rb lib/every/*.rb
+      - name: Unit tests
+        run: |
+          ruby test/schedule_test.rb
+          ruby test/systemd_test.rb
+      # Validate every generated OnCalendar expression with real systemd.
+      - name: systemd-analyze calendar validation
+        run: |
+          ruby -Ilib -revery -e '
+            ["day 9am", "day 9am,6pm", "weekdays 9:30", "weekends 11am",
+             "monday 10:00", "monday,thursday 6pm"].each do |raw|
+              s = Every::Schedule.parse(raw.split)
+              Every::Systemd.calendar_lines(s).each do |c|
+                system("systemd-analyze", "calendar", c) or abort("invalid: #{c}")
+              end
+            end
+            puts "all calendar expressions valid"
+          '

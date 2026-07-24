@@ -19,7 +19,7 @@ module Every
 
       started = Time.now
       dir, note = workdir(task)
-      out, status = Open3.capture2e("/bin/zsh", "-lc", task["cmd"], chdir: dir)
+      out, status = Open3.capture2e(*login_shell, task["cmd"], chdir: dir)
       out = note + out if note
       exit_code = status.exitstatus || 1
       duration = (Time.now - started).round(2)
@@ -35,11 +35,24 @@ module Every
       exit exit_code
     end
 
-    # macOS notification so failures don't die silently in a log file.
+    # Run through the user's login shell so PATH matches their terminal.
+    def login_shell
+      if RUBY_PLATFORM.include?("darwin")
+        ["/bin/zsh", "-lc"]
+      else
+        [ENV["SHELL"] || "/bin/bash", "-lc"]
+      end
+    end
+
+    # Desktop notification so failures don't die silently in a log file.
     def notify_failure(name, exit_code)
       msg = "#{name} failed (exit #{exit_code}) — every log #{name}"
-      script = "display notification \"#{osa_esc(msg)}\" with title \"every\""
-      system("osascript", "-e", script, out: File::NULL, err: File::NULL)
+      if RUBY_PLATFORM.include?("darwin")
+        script = "display notification \"#{osa_esc(msg)}\" with title \"every\""
+        system("osascript", "-e", script, out: File::NULL, err: File::NULL)
+      else
+        system("notify-send", "every", msg, out: File::NULL, err: File::NULL)
+      end
     end
 
     def osa_esc(s)

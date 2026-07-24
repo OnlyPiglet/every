@@ -5,6 +5,28 @@ module Every
   module Launchd
     module_function
 
+    # Common backend interface (see Backend)
+    def write(name, schedule)
+      write_plist(name, schedule)
+    end
+
+    def enable(name)
+      bootstrap(name)
+    end
+
+    def disable(name)
+      bootout(name)
+    end
+
+    def unit_path(name)
+      plist_path(name)
+    end
+
+    def delete_units(name)
+      p = plist_path(name)
+      File.delete(p) if File.exist?(p)
+    end
+
     def label(name)
       "com.every.#{name}"
     end

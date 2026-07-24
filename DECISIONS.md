@@ -38,6 +38,14 @@ Dated log; append, don't rewrite.
   is visibility; a FAIL that waits for the user to run `list` is still silence.
 - **2026-07-24 — No git yet.** Working account on this machine is a work
   account; repo stays local until published from the right identity.
+- **2026-07-24 — Backend abstraction + Linux beta.** `Backend.current`
+  dispatches launchd (darwin) / systemd user timers (linux); both implement
+  write/enable/disable/delete_units/loaded?/unit_path. systemd side:
+  service+timer pair per task, `Persistent=true` mirrors launchd's
+  missed-run-on-wake catch-up, runner uses `$SHELL -lc` on Linux and
+  notify-send for failure alerts. Beta honesty: unit generation is tested
+  (unit tests + systemd-analyze in CI on ubuntu-latest), live end-to-end on a
+  real Linux desktop is NOT yet — hence "beta" and a call for field reports.
 - **2026-07-24 — Published (supersedes "No git yet"):**
   github.com/Serhii-Leniv/every, authored as Serhii-Leniv via a dedicated
   `github-serhii` ssh alias; repo-local identity + pre-commit/pre-push guard

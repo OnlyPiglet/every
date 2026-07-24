@@ -6,15 +6,20 @@ module Every
 
     def run
       failures = 0
+      darwin = RUBY_PLATFORM.include?("darwin")
 
-      failures += report("running on macOS",
-                         RUBY_PLATFORM.include?("darwin"),
-                         "every v1 only supports macOS (launchd)")
-
-      _out, st = Open3.capture2e("launchctl", "print", "gui/#{Launchd.uid}")
-      failures += report("launchd user session reachable (gui/#{Launchd.uid})",
-                         st.success?,
-                         "no GUI session — launchd agents don't run over bare SSH sessions")
+      if darwin
+        _out, st = Open3.capture2e("launchctl", "print", "gui/#{Launchd.uid}")
+        failures += report("launchd user session reachable (gui/#{Launchd.uid})",
+                           st.success?,
+                           "no GUI session — launchd agents don't run over bare SSH sessions")
+      else
+        out, st = Systemd.sysctl("is-system-running")
+        ok = st.success? || out.strip == "degraded"
+        failures += report("systemd user session reachable", ok,
+                           "no user systemd — is this a desktop/loginctl session?")
+        puts "  · note: timers stop at logout unless you run: loginctl enable-linger $USER"
+      end
 
       dir_ok = begin
         FileUtils.mkdir_p(DATA_DIR)
@@ -34,28 +39,30 @@ module Every
                            "refresh it: every resume <name> (or re-add any task)")
       end
 
+      backend = Backend.current
       store.tasks.each do |name, task|
         puts "\ntask: #{name}"
-        plist = Launchd.plist_path(name)
-        failures += report("plist exists (#{plist})", File.exist?(plist),
+        unit = backend.unit_path(name)
+        failures += report("unit exists (#{unit})", File.exist?(unit),
                            "re-create the task: every rm #{name} && every <schedule> -- <cmd>")
 
         if task["paused"]
           puts "  · paused — resume with: every resume #{name}"
         else
-          failures += report("agent loaded in launchd", Launchd.loaded?(name),
+          failures += report("scheduled in #{darwin ? 'launchd' : 'systemd'}",
+                             backend.loaded?(name),
                              "load it: every resume #{name}")
         end
 
         first_word = task["cmd"].to_s.strip.split(/\s+/).first.to_s
-        _o, st = Open3.capture2e("/bin/zsh", "-lc", "command -v #{shellword(first_word)}")
+        _o, st = Open3.capture2e(*Runner.login_shell, "command -v #{shellword(first_word)}")
         failures += report("command resolvable in login shell (#{first_word})",
                            st.success?,
-                           "launchd runs zsh as a LOGIN shell: PATH set only in ~/.zshrc " \
-                           "(e.g. mise/rbenv hooks) is not visible — move it to ~/.zprofile, " \
-                           "or use an absolute path")
+                           "tasks run in a LOGIN shell: PATH set only in the interactive rc file " \
+                           "(~/.zshrc / ~/.bashrc, e.g. mise/rbenv hooks) is not visible — move it " \
+                           "to ~/.zprofile / ~/.profile, or use an absolute path")
 
-        if task["cwd"].to_s =~ %r{/(Documents|Desktop|Downloads)(/|\z)}
+        if darwin && task["cwd"].to_s =~ %r{/(Documents|Desktop|Downloads)(/|\z)}
           puts "  · note: added inside #{Regexp.last_match(1)} (TCC-protected) — if the command touches"
           puts "    that folder, grant Full Disk Access to ruby (System Settings → Privacy & Security)"
         end

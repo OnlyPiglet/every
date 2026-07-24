@@ -107,7 +107,15 @@ Failed runs pop a macOS notification (silence it per task with `--quiet`).
   recorded under `~/.local/share/every/` (logs rotate at 5 MB). launchd can't
   execute from TCC-protected folders, so agents run a copy of `every` from the
   data dir — see [DECISIONS.md](DECISIONS.md) for design notes.
-- macOS only for now; Linux (systemd user timers) is the planned v2.
+- **Linux (beta):** systemd user timers, same commands; units live in
+  `~/.config/systemd/user`. Timers stop at logout unless you run
+  `loginctl enable-linger $USER`. Install from source (above) — field reports
+  very welcome.
 - Uninstall: `every rm` each task, then `rm -rf ~/.local/share/every`.
+
+## Roadmap
+
+Where it's going and what's still rough: [ROADMAP.md](ROADMAP.md). Issues and
+PRs welcome.
 
 MIT © [Serhii Leniv](https://github.com/Serhii-Leniv)

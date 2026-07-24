@@ -1,0 +1,67 @@
+module Every
+  # `every run <name>` — what launchd actually invokes. Executes the task's
+  # command through the user's login shell (so PATH matches the terminal),
+  # captures all output, and records the run.
+  module Runner
+    MAX_LOG_BYTES = 5 * 1024 * 1024
+
+    module_function
+
+    def run(name)
+      task = Store.load[name]
+      unless task
+        warn "every: unknown task #{name.inspect} — orphaned agent? try: every doctor"
+        exit 66
+      end
+
+      FileUtils.mkdir_p(LOG_DIR)
+      FileUtils.mkdir_p(RUNS_DIR)
+
+      started = Time.now
+      dir, note = workdir(task)
+      out, status = Open3.capture2e("/bin/zsh", "-lc", task["cmd"], chdir: dir)
+      out = note + out if note
+      exit_code = status.exitstatus || 1
+      duration = (Time.now - started).round(2)
+
+      append_log(name, started, exit_code, duration, out)
+      append_run(name, started, exit_code, duration)
+      exit exit_code
+    end
+
+    # Probe actual readability: under launchd, TCC-protected dirs (Documents…)
+    # pass File.directory? but fail on access — fall back to HOME, loudly.
+    def workdir(task)
+      dir = task["cwd"]
+      return [Dir.home, nil] unless dir && File.directory?(dir)
+      Dir.entries(dir)
+      [dir, nil]
+    rescue SystemCallError
+      [Dir.home,
+       "note: cwd #{dir} not readable under launchd (TCC) — ran from #{Dir.home}\n"]
+    end
+
+    def append_log(name, started, exit_code, duration, out)
+      path = File.join(LOG_DIR, "#{name}.log")
+      rotate(path)
+      File.open(path, "a") do |f|
+        f.puts "=== #{started.strftime('%Y-%m-%d %H:%M:%S')} exit=#{exit_code} dur=#{duration}s ==="
+        f.write(out)
+        f.puts unless out.empty? || out.end_with?("\n")
+      end
+    end
+
+    def append_run(name, started, exit_code, duration)
+      File.open(File.join(RUNS_DIR, "#{name}.jsonl"), "a") do |f|
+        f.puts JSON.generate("ts" => started.iso8601,
+                             "exit" => exit_code,
+                             "dur" => duration)
+      end
+    end
+
+    def rotate(path)
+      return unless File.exist?(path) && File.size(path) > MAX_LOG_BYTES
+      FileUtils.mv(path, "#{path}.old")
+    end
+  end
+end

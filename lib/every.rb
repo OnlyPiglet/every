@@ -7,7 +7,7 @@ require "rbconfig"
 require "shellwords"
 
 module Every
-  VERSION = "0.1.1".freeze
+  VERSION = "0.1.2".freeze
   HOMEPAGE = "https://github.com/Serhii-Leniv/every".freeze
   TAGLINE = "humane task scheduler for macOS (launchd) and Linux (systemd, beta)".freeze
 

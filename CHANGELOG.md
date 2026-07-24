@@ -1,12 +1,22 @@
 # Changelog
 
-## Unreleased
+## 0.1.2 — 2026-07-24
+
+Dogfooding pass — small fixes from actually using it.
 
 ### Fixed
 - `list` now reflects the scheduler's real state, not just the run ledger: a
   task whose agent isn't loaded shows **`unscheduled`** (with a hint) instead of
   a stale `ok`/`NEXT`. Closes a gap in the core "know it ran" promise — a task
-  that silently stopped firing no longer looks healthy. (Surfaced by dogfooding.)
+  that silently stopped firing no longer looks healthy.
+
+### Changed
+- After scheduling a task, the confirmation spells out that **output goes to the
+  log** (`every log <name>`), since the task runs detached and its output won't
+  appear in your terminal — the #1 first-timer confusion.
+- A mistyped command (e.g. `every update`) now gets a helpful message listing
+  the real commands and the `-- <command>` form, instead of a cryptic
+  "expected schedule".
 
 ## 0.1.1 — 2026-07-24
 

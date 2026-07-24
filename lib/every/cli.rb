@@ -36,7 +36,13 @@ module Every
 
     def add(argv)
       sep = argv.index("--")
-      raise ArgumentError, "expected: every <schedule> -- <command>" unless sep
+      unless sep
+        first = argv.first.to_s
+        raise ArgumentError,
+              "#{first.inspect} isn't a command, and there's no `--` before a task.\n" \
+              "  to schedule:  every <when> -- <command>   (e.g. every day 9am -- brew update)\n" \
+              "  commands:     list, log, run, pause, resume, rm, doctor, version"
+      end
 
       pre = argv[0...sep]
       cmd_tokens = argv[(sep + 1)..-1] || []
@@ -99,8 +105,10 @@ module Every
       puts "✓ scheduled #{name}: #{schedule.raw} — #{cmd}"
       nxt = schedule.next_run
       puts "  next run: #{nxt.strftime('%a %d %b %H:%M')}" if nxt
-      puts "  runs every #{schedule.human_interval} while the Mac is awake" if schedule.interval
-      puts "  logs:     every log #{name}"
+      puts "  runs every #{schedule.human_interval} while the machine is awake" if schedule.interval
+      # The task runs detached, so its output won't appear in this terminal —
+      # spell that out, it's the #1 first-timer confusion.
+      puts "  output:   runs in the background → see it with `every log #{name}`"
     end
 
     # ---- list ----

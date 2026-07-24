@@ -48,10 +48,11 @@ module Every
       timeout = timeout_raw && parse_duration(timeout_raw)
 
       schedule = Schedule.parse(pre)
-      # One token = a shell command line (verbatim, so pipes/globs/vars work).
-      # Multiple tokens = argv, escaped so quoted args with spaces or shell
-      # metacharacters aren't re-split or re-expanded by the login shell.
-      cmd = cmd_tokens.length == 1 ? cmd_tokens[0] : Shellwords.join(cmd_tokens)
+      # The command is a shell command line — every runs it through the login
+      # shell, so tokens are joined with spaces (like cron), and shell features
+      # (env prefixes, pipes, &&, globs) work. Quote args with spaces or
+      # metacharacters as you would at a prompt:  -- 'touch "my file.txt"'.
+      cmd = cmd_tokens.join(" ")
       store = Store.load
 
       if explicit_name
@@ -78,11 +79,22 @@ module Every
                 "paused" => false,
                 "quiet" => quiet }
       attrs["timeout"] = timeout if timeout
+
+      # A newly-added task starts with a clean slate, even if a task with this
+      # name existed before and was rm'd (rm keeps the ledger/log for later
+      # inspection, but re-using the name means a fresh task, not the old one).
+      reset_history(name)
       store.add(name, attrs)
       Runtime.ensure!
       FileUtils.mkdir_p(LOG_DIR)   # so launchd's _agent.log redirect can open on the first fire
-      backend.write(name, schedule)
-      backend.enable(name)
+      begin
+        backend.write(name, schedule)
+        backend.enable(name)
+      rescue => e
+        store.remove(name)                 # roll back so store & scheduler agree
+        backend.delete_units(name) rescue nil
+        raise "could not schedule #{name}: #{e.message}"
+      end
 
       puts "✓ scheduled #{name}: #{schedule.raw} — #{cmd}"
       nxt = schedule.next_run
@@ -101,17 +113,22 @@ module Every
       end
 
       rows = store.tasks.map do |name, t|
-        sched = Schedule.from_h(t["schedule"])
-        last = store.last_run(name)
-        lt = last && safe_time(last["ts"])
-        last_s = lt ? lt.strftime("%d %b %H:%M") : "—"
-        status =
-          if t["paused"]          then "paused"
-          elsif last.nil?         then "·"
-          elsif last["exit"] == 0 then "ok"
-          else                         "FAIL(#{last['exit']})"
-          end
-        [name, sched.raw, last_s, status, next_str(t, sched, last)]
+        begin
+          sched = Schedule.from_h(t["schedule"])
+          last = store.last_run(name)
+          lt = last && safe_time(last["ts"])
+          last_s = lt ? lt.strftime("%d %b %H:%M") : "—"
+          status =
+            if t["paused"]          then "paused"
+            elsif last.nil?         then "·"
+            elsif last["exit"] == 0 then "ok"
+            else                         "FAIL(#{last['exit']})"
+            end
+          [name, sched.raw, last_s, status, next_str(t, sched, last)]
+        rescue StandardError
+          # One unreadable/forward-incompatible record must not hide every task.
+          [name, (t.dig("schedule", "raw") || "?"), "—", "invalid", "—"]
+        end
       end
 
       headers = %w[NAME SCHEDULE LAST STATUS NEXT]
@@ -129,7 +146,7 @@ module Every
         return "soon" unless lt
         (lt + sched.interval).strftime("%d %b %H:%M")
       else
-        sched.next_run.strftime("%d %b %H:%M")
+        sched.next_run&.strftime("%d %b %H:%M") || "?"
       end
     end
 
@@ -253,6 +270,12 @@ module Every
       Time.parse(str.to_s)
     rescue ArgumentError, TypeError
       nil
+    end
+
+    # Clear any leftover ledger/log from a previously-removed task of this name.
+    def reset_history(name)
+      FileUtils.rm_f(File.join(RUNS_DIR, "#{name}.jsonl"))
+      Dir.glob(File.join(LOG_DIR, "#{name}.log*")).each { |f| File.delete(f) }
     end
 
     def backend

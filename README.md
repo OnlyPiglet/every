@@ -103,8 +103,12 @@ Failed runs pop a macOS notification (silence it per task with `--quiet`).
 
 ## Fine print
 
-- **Quoting:** your shell strips quotes first — wrap complex commands in one
-  string: `every day 9am -- 'psql -c "select 1" | tee ~/log.txt'`.
+- **The command is a shell line** (like cron): tokens after `--` are run through
+  your login shell, so env prefixes, pipes, `&&`, and globs all work. Your outer
+  shell strips quotes first, so quote args with spaces or metacharacters as you
+  would at a prompt — wrap the whole thing in one quoted string when in doubt:
+  `every day 9am -- 'pg_dump db | gzip > ~/backup.gz'`,
+  `every 1h -- 'touch "my file.txt"'`.
 - **Timeouts:** add `--timeout 30m` to kill a run that overruns — otherwise a
   task that hangs will block its own next run (the OS won't start a second copy
   of the same task). The kill takes the whole process tree with it.

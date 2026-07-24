@@ -81,13 +81,20 @@ class RunnerTest < Minitest::Test
     refute File.exist?(marker), "orphaned child survived the timeout kill"
   end
 
-  # Output in the 32-64KB band must keep its TAIL (errors often live there),
-  # not silently drop it — the bug was the marker-gated tail append.
-  def test_capture_keeps_tail_in_mid_band
+  # Output in the 32-64KB band must keep its TAIL (errors often live there) and
+  # must NOT inject a false "0 bytes truncated" marker (nothing was dropped).
+  def test_capture_keeps_tail_in_mid_band_without_false_marker
     out, code = Every::Runner.capture("printf 'HEAD'; yes x | head -c 40000; printf 'TAILMARK'", Dir.home, nil)
     assert_equal 0, code
     assert_includes out, "HEAD"
     assert_includes out, "TAILMARK"
+    refute_includes out, "truncated", "false truncation marker on un-dropped output"
+  end
+
+  # Over 64KB, the marker IS shown (bytes really were dropped).
+  def test_capture_marks_real_truncation
+    out, _ = Every::Runner.capture("yes x | head -c 200000", Dir.home, nil)
+    assert_includes out, "truncated"
   end
 
   # Large non-ASCII output must not crash the truncation/concat path.

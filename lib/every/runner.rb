@@ -100,10 +100,14 @@ module Every
         end
       end
 
-      # ASCII marker + binary body: no UTF-8/ASCII-8BIT concat crash on binary
-      # or non-ASCII output.
+      # Append the tail whenever it exists; only inject the truncation marker
+      # when bytes were actually dropped (32-64 KB output keeps head+tail with
+      # nothing between). ASCII marker + binary body: no encoding crash.
       body = head
-      body = body + "\n... [#{dropped} bytes truncated] ...\n".b + tail unless tail.empty?
+      unless tail.empty?
+        body += "\n... [#{dropped} bytes truncated] ...\n".b if dropped.positive?
+        body += tail
+      end
       [body, exit_code_for(status, timed_out)]
     end
 

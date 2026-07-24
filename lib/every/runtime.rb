@@ -14,8 +14,6 @@ module Every
 
     module_function
 
-    STAMP = File.join(RUNTIME_DIR, ".version")
-
     # TCC only exists on macOS; on Linux these folder names carry no
     # restriction, so never copy there (a ~/Documents install stays live).
     def tcc_protected?(path)
@@ -27,29 +25,25 @@ module Every
       tcc_protected?(ROOT) && !ROOT.start_with?(DATA_DIR)
     end
 
-    # Refresh the copy only when missing or stale (version changed), and swap it
-    # in atomically: build a sibling dir, then rename over the live one — never
-    # rm_rf the directory the scheduler is executing from mid-copy.
+    # Rebuild the copy on every add/resume (so a `git pull` propagates even
+    # without a version bump — the project ships code under the same 0.1.0), and
+    # swap it in with two renames so the live dir is never missing mid-copy for
+    # more than the instant between them.
     def ensure!
       return unless needs_copy?
-      return if fresh?
 
       staging = "#{RUNTIME_DIR}.new"
+      old = "#{RUNTIME_DIR}.old"
       FileUtils.rm_rf(staging)
+      FileUtils.rm_rf(old)
       FileUtils.mkdir_p(staging)
       FileUtils.cp_r(File.join(ROOT, "bin"), staging)
       FileUtils.cp_r(File.join(ROOT, "lib"), staging)
       FileUtils.chmod(0o755, File.join(staging, "bin", "every"))
-      File.write(File.join(staging, ".version"), Every::VERSION)
-      FileUtils.rm_rf(RUNTIME_DIR)
+      File.rename(RUNTIME_DIR, old) if File.exist?(RUNTIME_DIR)
       File.rename(staging, RUNTIME_DIR)
+      FileUtils.rm_rf(old)
       BIN
-    end
-
-    def fresh?
-      File.exist?(BIN) && File.exist?(STAMP) && File.read(STAMP) == Every::VERSION
-    rescue SystemCallError
-      false
     end
 
     # Path the scheduler should invoke. When a copy is required, the stable copy.

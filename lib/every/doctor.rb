@@ -59,12 +59,23 @@ module Every
         end
 
         first_word = task["cmd"].to_s.strip.split(/\s+/).first.to_s
-        _o, st = Open3.capture2e(*Runner.login_shell, "command -v #{shellword(first_word)}")
-        failures += report("command resolvable in login shell (#{first_word})",
-                           st.success?,
-                           "tasks run in a LOGIN shell: PATH set only in the interactive rc file " \
-                           "(~/.zshrc / ~/.bashrc, e.g. mise/rbenv hooks) is not visible — move it " \
-                           "to ~/.zprofile / ~/.profile, or use an absolute path")
+        if first_word =~ /\A[\w][\w.-]*\z/
+          # A plain command name — check PATH the way the runner will resolve it.
+          _o, st = Open3.capture2e(*Runner.login_shell, "command -v #{shellword(first_word)}")
+          failures += report("command resolvable in login shell (#{first_word})",
+                             st.success?,
+                             "tasks run in a LOGIN shell: PATH set only in the interactive rc file " \
+                             "(~/.zshrc / ~/.bashrc, e.g. mise/rbenv hooks) is not visible — move it " \
+                             "to ~/.zprofile / ~/.profile, or use an absolute path")
+        elsif first_word.include?("/")
+          # A path (possibly ~-relative) — expand ~ the way the shell does.
+          expanded = first_word.sub(/\A~/, Dir.home)
+          failures += report("command file exists (#{first_word})", File.exist?(expanded),
+                             "not found: #{expanded} — check the path")
+        else
+          # env prefix / shell expression (e.g. FOO=bar cmd) — can't reliably probe.
+          puts "  · command begins with #{first_word.inspect} — not probed (shell expression)"
+        end
 
         if darwin && task["cwd"].to_s =~ %r{/(Documents|Desktop|Downloads)(/|\z)}
           puts "  · note: added inside #{Regexp.last_match(1)} (TCC-protected) — if the command touches"

@@ -1,7 +1,8 @@
 require "minitest/autorun"
 require "fileutils"
+require "tmpdir"
 require "json"
-ENV["EVERY_HOME"] = "/private/tmp/every-store-test"
+ENV["EVERY_HOME"] = File.join(Dir.tmpdir, "every-store-test")
 FileUtils.rm_rf(ENV["EVERY_HOME"])
 $LOAD_PATH.unshift File.expand_path("../../lib", __FILE__)
 require "every"

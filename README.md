@@ -1,16 +1,26 @@
 <p align="center">
-  <img src="mascot.svg" width="150" alt="every mascot — a pixel-art alarm clock whose face shows a green check">
+  <img src="mascot.svg" width="140" alt="every mascot — a pixel-art alarm clock whose face shows a green check">
 </p>
 
-# every
+<h1 align="center">every</h1>
 
-[![test](https://github.com/Serhii-Leniv/every/actions/workflows/test.yml/badge.svg)](https://github.com/Serhii-Leniv/every/actions/workflows/test.yml)
-[![license: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-![dependencies: zero](https://img.shields.io/badge/dependencies-zero-blue.svg)
+<p align="center"><strong>Schedule anything on your Mac. Actually know it ran.</strong></p>
 
-**Schedule anything on your Mac. Actually know it ran.**
+<p align="center">
+  <a href="https://github.com/Serhii-Leniv/every/actions/workflows/test.yml"><img src="https://github.com/Serhii-Leniv/every/actions/workflows/test.yml/badge.svg" alt="test"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="license: MIT"></a>
+  <img src="https://img.shields.io/badge/dependencies-zero-blue.svg" alt="dependencies: zero">
+</p>
 
-<img src="demo.gif" width="720" alt="every demo: schedule a task in one phrase, see ok/FAIL status, read run logs">
+<p align="center">
+  <img src="demo.gif" width="720" alt="every demo: schedule a task in one phrase, see ok/FAIL status, read run logs">
+</p>
+
+<p align="center">
+  <a href="#install">Install</a> · <a href="#schedules">Schedules</a> · <a href="#commands">Commands</a> · <a href="#vs-cron--vs-raw-launchd">vs cron</a>
+</p>
+
+---
 
 cron never tells you it silently skipped your backup. launchd wants 40 lines of
 XML before ignoring you too. `every` is one human phrase — and a straight

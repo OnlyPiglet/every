@@ -31,7 +31,7 @@ module Every
       mono = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       dir, note = workdir(task)
       out, exit_code = capture(task["cmd"], dir, task["timeout"])
-      out = note + out if note
+      out = note.b + out if note   # note may hold a non-ASCII cwd path
       # Monotonic clock: an NTP/DST wall-clock jump mid-run can't make this
       # negative. The ledger timestamp still uses wall-clock `started`.
       duration = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - mono).round(2)
@@ -53,60 +53,84 @@ module Every
     # hung process to block the next scheduled run.
     def capture(cmd, dir, timeout_sec)
       require "timeout"
-      head = "".b
-      tail = "".b
+      head = "".b           # first HALF_OUTPUT bytes, exactly
+      tail = "".b           # last HALF_OUTPUT bytes (rolling)
       dropped = 0
       status = nil
+      timed_out = false
+
+      keep = lambda do |chunk|
+        if head.bytesize < HALF_OUTPUT
+          room = HALF_OUTPUT - head.bytesize
+          head << chunk.byteslice(0, room)
+          rest = chunk.byteslice(room, chunk.bytesize - room)
+          chunk = rest
+        end
+        return if chunk.nil? || chunk.empty?
+        tail << chunk
+        return unless tail.bytesize > HALF_OUTPUT
+        over = tail.bytesize - HALF_OUTPUT
+        dropped += over
+        tail = tail.byteslice(over, HALF_OUTPUT)
+      end
 
       Open3.popen2e(*login_shell, cmd, chdir: dir, pgroup: true) do |stdin, out, wait|
         stdin.close
         pid = wait.pid
         drain = lambda do
           while (chunk = out.read(16 * 1024))
-            if head.bytesize < HALF_OUTPUT
-              head << chunk
-            else
-              tail << chunk
-              if tail.bytesize > HALF_OUTPUT
-                over = tail.bytesize - HALF_OUTPUT
-                dropped += over
-                tail = tail.byteslice(over, HALF_OUTPUT)
-              end
-            end
+            keep.call(chunk)
           end
         end
 
         begin
-          timeout_sec ? Timeout.timeout(timeout_sec) { drain.call } : drain.call
-          status = wait.value
+          # wait.value lives INSIDE the timeout: a command that closes stdout
+          # early but keeps running still gets killed at the deadline.
+          if timeout_sec
+            Timeout.timeout(timeout_sec) { drain.call; status = wait.value }
+          else
+            drain.call
+            status = wait.value
+          end
         rescue Timeout::Error
-          kill_group(pid)
+          timed_out = true
+          terminate(pid)
           status = (wait.value rescue nil)
           head << "\n[every: killed after #{timeout_sec}s timeout]\n"
         end
       end
 
-      body = head.dup
-      body << "\n… [#{dropped} bytes truncated] …\n" << tail if dropped.positive?
-      [body, status&.exitstatus || 124]
+      # ASCII marker + binary body: no UTF-8/ASCII-8BIT concat crash on binary
+      # or non-ASCII output.
+      body = head
+      body = body + "\n... [#{dropped} bytes truncated] ...\n".b + tail unless tail.empty?
+      [body, exit_code_for(status, timed_out)]
     end
 
-    def kill_group(pid)
-      pgid = Process.getpgid(pid)
-      Process.kill("-TERM", pgid)
+    # timeout -> 124; clean exit -> its code; signal death -> 128+signum.
+    def exit_code_for(status, timed_out)
+      return 124 if timed_out
+      return status.exitstatus if status&.exitstatus
+      return 128 + status.termsig if status.respond_to?(:signaled?) && status.signaled?
+      1
+    end
+
+    # Kill the whole process tree: with pgroup:true the child is its own group
+    # leader, so a negative pid signals the group (no getpgid/reap race).
+    def terminate(pid)
+      Process.kill("TERM", -pid)
       sleep 0.3
-      Process.kill("-KILL", pgid)
+      Process.kill("KILL", -pid)
     rescue Errno::ESRCH, Errno::EPERM
       nil
     end
 
-    # Run through the user's login shell so PATH matches their terminal.
+    # Run through the user's login shell so PATH matches their terminal. Only
+    # bash/zsh accept the bundled `-lc`; sh/dash/others reject `-l`, so use -c.
     def login_shell
-      if RUBY_PLATFORM.include?("darwin")
-        ["/bin/zsh", "-lc"]
-      else
-        [ENV["SHELL"] || "/bin/bash", "-lc"]
-      end
+      return ["/bin/zsh", "-lc"] if RUBY_PLATFORM.include?("darwin")
+      sh = ENV["SHELL"] || "/bin/bash"
+      [sh, sh =~ /(bash|zsh)\z/ ? "-lc" : "-c"]
     end
 
     # Desktop notification so failures don't die silently in a log file.
@@ -162,7 +186,9 @@ module Every
       return if File.size(path) <= RUN_TRIM_BYTES
       lines = File.readlines(path)
       return if lines.length <= MAX_RUN_RECORDS
-      File.write(path, lines.last(MAX_RUN_RECORDS).join)
+      tmp = "#{path}.tmp.#{Process.pid}"
+      File.write(tmp, lines.last(MAX_RUN_RECORDS).join)
+      File.rename(tmp, path)   # atomic: a crash mid-trim can't truncate history
     end
 
     def rotate(path)

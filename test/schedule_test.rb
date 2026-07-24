@@ -129,6 +129,31 @@ class ScheduleTest < Minitest::Test
     assert_raises(ArgumentError) { S.parse([]) }
   end
 
+  # An empty / comma-only time list must ERROR, not create a never-firing task.
+  def test_rejects_empty_time_list
+    assert_raises(ArgumentError) { parse("day ,") }
+    assert_raises(ArgumentError) { parse("day 9am,") }
+    assert_raises(ArgumentError) { parse("day 9am,,6pm") }
+  end
+
+  # am/pm with an out-of-band hour must error, not silently become 13:00 / 00:00.
+  def test_rejects_bad_ampm_hours
+    assert_raises(ArgumentError) { parse("day 13pm") }
+    assert_raises(ArgumentError) { parse("day 0am") }
+  end
+
+  def test_dedupes_repeated_times_and_days
+    assert_equal 1, parse("day 9am,9am").entries.length
+    assert_equal 1, parse("monday,monday 10:00").entries.length
+  end
+
+  # A legacy persisted weekday of 7 (Sunday) must clamp to 0, not crash systemd.
+  def test_from_h_clamps_legacy_weekday_seven
+    s = S.from_h("raw" => "sunday 9am", "kind" => "weekly",
+                 "hour" => 9, "minute" => 0, "weekday" => 7)
+    assert_equal 0, s.entries.first["weekday"]
+  end
+
   # ---- next_run ----
 
   def test_daily_next_run_today_if_future

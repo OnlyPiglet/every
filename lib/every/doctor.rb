@@ -18,7 +18,11 @@ module Every
         ok = st.success? || out.strip == "degraded"
         failures += report("systemd user session reachable", ok,
                            "no user systemd — is this a desktop/loginctl session?")
-        puts "  · note: timers stop at logout unless you run: loginctl enable-linger $USER"
+        linger, lst = Open3.capture2e("loginctl", "show-user", ENV["USER"].to_s, "-p", "Linger")
+        lingering = lst.success? && linger.include?("Linger=yes")
+        failures += report("lingering enabled (timers fire at boot / after logout)",
+                           lingering,
+                           "run: loginctl enable-linger #{ENV['USER']}")
       end
 
       dir_ok = begin
@@ -74,7 +78,7 @@ module Every
           failures += report("last run succeeded", false,
                              "exit=#{last['exit']} — see: every log #{name}")
           log_path = File.join(LOG_DIR, "#{name}.log")
-          if File.exist?(log_path) && File.read(log_path).include?("Operation not permitted")
+          if darwin && File.exist?(log_path) && File.read(log_path).include?("Operation not permitted")
             puts "    hint: 'Operation not permitted' usually means the ruby binary needs"
             puts "    Full Disk Access (System Settings → Privacy & Security) to touch that folder"
           end

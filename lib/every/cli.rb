@@ -13,7 +13,7 @@ module Every
       when nil, "help", "-h", "--help"   then help
       when "version", "--version"        then version
       when "list", "ls"                  then list
-      when "log"                         then log(@argv[1])
+      when "log"                         then log
       when "rm", "remove"                then rm(@argv[1])
       when "pause"                       then pause(@argv[1])
       when "resume"                      then resume(@argv[1])
@@ -25,6 +25,11 @@ module Every
       warn "every: #{e.message}"
       warn "see: every help"
       exit 64
+    rescue => e
+      # Any other failure prints a clean line, never a raw backtrace.
+      # (SystemExit/Interrupt aren't StandardError, so they pass through.)
+      warn "every: #{e.message} (#{e.class})"
+      exit 1
     end
 
     # ---- add: every <schedule> [--name NAME] -- <command> ----
@@ -37,24 +42,16 @@ module Every
       cmd_tokens = argv[(sep + 1)..-1] || []
       raise ArgumentError, "missing command after --" if cmd_tokens.empty?
 
-      explicit_name = nil
-      if (i = pre.index("--name"))
-        explicit_name = pre[i + 1]
-        raise ArgumentError, "--name needs a value" if explicit_name.nil?
-        pre = pre[0...i] + (pre[(i + 2)..-1] || [])
-      end
+      pre, explicit_name = extract_value_flag(pre, "--name")
+      pre, timeout_raw = extract_value_flag(pre, "--timeout")
       quiet = !pre.delete("--quiet").nil?
-
-      timeout = nil
-      if (ti = pre.index("--timeout"))
-        raw = pre[ti + 1]
-        raise ArgumentError, "--timeout needs a duration (e.g. 30m, 2h)" if raw.nil?
-        timeout = parse_duration(raw)
-        pre = pre[0...ti] + (pre[(ti + 2)..-1] || [])
-      end
+      timeout = timeout_raw && parse_duration(timeout_raw)
 
       schedule = Schedule.parse(pre)
-      cmd = cmd_tokens.join(" ")
+      # One token = a shell command line (verbatim, so pipes/globs/vars work).
+      # Multiple tokens = argv, escaped so quoted args with spaces or shell
+      # metacharacters aren't re-split or re-expanded by the login shell.
+      cmd = cmd_tokens.length == 1 ? cmd_tokens[0] : Shellwords.join(cmd_tokens)
       store = Store.load
 
       if explicit_name
@@ -83,6 +80,7 @@ module Every
       attrs["timeout"] = timeout if timeout
       store.add(name, attrs)
       Runtime.ensure!
+      FileUtils.mkdir_p(LOG_DIR)   # so launchd's _agent.log redirect can open on the first fire
       backend.write(name, schedule)
       backend.enable(name)
 
@@ -105,7 +103,8 @@ module Every
       rows = store.tasks.map do |name, t|
         sched = Schedule.from_h(t["schedule"])
         last = store.last_run(name)
-        last_s = last ? Time.parse(last["ts"]).strftime("%d %b %H:%M") : "—"
+        lt = last && safe_time(last["ts"])
+        last_s = lt ? lt.strftime("%d %b %H:%M") : "—"
         status =
           if t["paused"]          then "paused"
           elsif last.nil?         then "·"
@@ -126,8 +125,9 @@ module Every
     def next_str(task, sched, last)
       return "—" if task["paused"]
       if sched.interval
-        return "soon" unless last
-        (Time.parse(last["ts"]) + sched.interval).strftime("%d %b %H:%M")
+        lt = last && safe_time(last["ts"])
+        return "soon" unless lt
+        (lt + sched.interval).strftime("%d %b %H:%M")
       else
         sched.next_run.strftime("%d %b %H:%M")
       end
@@ -144,13 +144,16 @@ module Every
 
     # ---- log / rm / pause / resume ----
 
-    def log(name)
-      usage!("log <name> [-n N]") unless name
+    def log
+      args = @argv[1..-1] || []
       n = 40
-      if (i = @argv.index("-n"))
-        n = @argv[i + 1].to_i
+      if (i = args.index("-n"))
+        n = args[i + 1].to_i
         n = 40 if n <= 0
+        args = args[0...i] + (args[(i + 2)..-1] || [])
       end
+      name = args.first
+      usage!("log <name> [-n N]") unless name
       path = File.join(LOG_DIR, "#{name}.log")
       unless File.exist?(path)
         warn "every: no logs yet for #{name.inspect} (has it run? check: every list)"
@@ -202,25 +205,54 @@ module Every
     # ---- helpers ----
 
     def derive_name(cmd, store)
-      base = sanitize(File.basename(cmd.strip.split(/\s+/).first.to_s))[0, MAX_NAME]
-      base = "task" if base.nil? || base.empty?
+      base = sanitize(File.basename(cmd.strip.split(/\s+/).first.to_s))[0, MAX_NAME].to_s
+      base = "task" if base.empty?
       name = base
       i = 2
       while store[name]
-        name = "#{base}-#{i}"
+        suffix = "-#{i}"
+        name = base[0, MAX_NAME - suffix.length] + suffix
         i += 1
       end
       name
     end
 
     def sanitize(s)
-      s.to_s.downcase.gsub(/[^a-z0-9_.-]/, "-").gsub(/\A-+|-+\z/, "")
+      s = s.to_s.downcase.gsub(/[^a-z0-9_.-]/, "-").gsub(/\A-+|-+\z/, "")
+      s =~ /\A\.+\z/ ? "" : s   # "." / ".." are not usable filenames
     end
 
     def parse_duration(raw)
       m = raw.to_s.match(/\A(\d+)(s|m|h)\z/)
       raise ArgumentError, "bad duration #{raw.inspect} (e.g. 90s, 30m, 2h)" unless m
-      m[1].to_i * { "s" => 1, "m" => 60, "h" => 3600 }[m[2]]
+      secs = m[1].to_i * { "s" => 1, "m" => 60, "h" => 3600 }[m[2]]
+      raise ArgumentError, "--timeout must be greater than 0" if secs.zero?
+      secs
+    end
+
+    # Pull `--flag value` or `--flag=value` out of the tokens. Rejects a missing
+    # value or a value that is itself a flag (so `--name --quiet` can't silently
+    # name the task "quiet" and swallow the flag).
+    def extract_value_flag(tokens, flag)
+      if (i = tokens.index(flag))
+        value = tokens[i + 1]
+        if value.nil? || value.start_with?("--")
+          raise ArgumentError, "#{flag} needs a value"
+        end
+        return [tokens[0...i] + (tokens[(i + 2)..-1] || []), value]
+      end
+      if (i = tokens.index { |t| t.start_with?("#{flag}=") })
+        value = tokens[i].split("=", 2)[1].to_s
+        raise ArgumentError, "#{flag} needs a value" if value.empty?
+        return [tokens[0...i] + (tokens[(i + 1)..-1] || []), value]
+      end
+      [tokens, nil]
+    end
+
+    def safe_time(str)
+      Time.parse(str.to_s)
+    rescue ArgumentError, TypeError
+      nil
     end
 
     def backend

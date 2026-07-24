@@ -38,6 +38,38 @@ Dated log; append, don't rewrite.
   is visibility; a FAIL that waits for the user to run `list` is still silence.
 - **2026-07-24 — No git yet.** Working account on this machine is a work
   account; repo stays local until published from the right identity.
+- **2026-07-24 — Multi-agent code review pass (5 parallel reviewers).** Fixed
+  the real findings across correctness/process/portability/CLI:
+  - **Command reconstruction:** one token = shell command line (verbatim, so
+    pipes/globs/vars work); multiple tokens = `Shellwords.join` (argv-faithful,
+    so `touch "a b"` makes one file and `echo 'a; rm'` can't reactivate `;`).
+  - **capture():** keep the tail for 32–64 KB output (was silently dropped);
+    ASCII truncation marker + binary concat (no UTF-8/ASCII-8BIT crash on binary
+    output); `wait.value` moved inside the timeout (a command that closes stdout
+    but keeps running is now killed); exit code = 124 timeout / 128+signum on
+    signal death / real exitstatus otherwise; kill the process *group* via
+    negative pid (no getpgid reap race); `login_shell` uses `-c` for non-bash/zsh
+    (dash rejects `-lc`).
+  - **schedule:** empty/comma-only time list now errors (was a never-firing
+    task); `13pm`/`0am` rejected; duplicate times deduped; `next_run` adds
+    calendar days (DST-safe display); legacy weekday 7 clamped to 0.
+  - **systemd:** `AccuracySec=1s` (sub-minute intervals no longer batch to 1 min);
+    `Environment=EVERY_HOME` propagated; weekday index bounded.
+  - **cli:** `--flag=value` supported; `--name --quiet` rejected (no silent
+    mis-name); `--timeout 0s` rejected; `log -n N <name>` reads the right task;
+    corrupt run timestamp no longer kills `list`; non-ArgumentError prints a clean
+    line, not a backtrace; derived names re-truncated under the length cap; `.`/`..`
+    rejected as names.
+  - **runtime:** TCC copy gated to macOS (a `~/Documents` install on Linux stays
+    live); atomic staged swap + version stamp (no `rm_rf` of the live dir mid-copy).
+  - **doctor:** Full-Disk-Access hint macOS-only; actually checks `loginctl`
+    linger on Linux. **launchd:** `logs/` created at add-time so the first fire's
+    `_agent.log` redirect can open. **trim_runs** writes tmp+rename (crash-atomic).
+  - **Deliberately deferred (documented, low real-world risk for a single-user
+    tool):** no lock around the store's load→save (concurrent `add`/`rm` is a
+    human serial action); a `setsid` grandchild can still escape the timeout kill;
+    the launchd legacy `load -w` fallback can mask a failed bootstrap over bare
+    SSH. Verified on macOS + a real Linux (ruby:3.2) container.
 - **2026-07-24 — Lifecycle hardening (found by an operational/round-3 harness).**
   Four fixes: (1) the runtime copy is made ONLY from TCC-protected folders
   (`Runtime.needs_copy?`); from Homebrew/`~/code` the scheduler points at the

@@ -14,23 +14,42 @@ module Every
 
     module_function
 
+    STAMP = File.join(RUNTIME_DIR, ".version")
+
+    # TCC only exists on macOS; on Linux these folder names carry no
+    # restriction, so never copy there (a ~/Documents install stays live).
     def tcc_protected?(path)
-      !(path.to_s =~ %r{/(Documents|Desktop|Downloads)(/|\z)}).nil?
+      RUBY_PLATFORM.include?("darwin") &&
+        !(path.to_s =~ %r{/(Documents|Desktop|Downloads)(/|\z)}).nil?
     end
 
     def needs_copy?
       tcc_protected?(ROOT) && !ROOT.start_with?(DATA_DIR)
     end
 
+    # Refresh the copy only when missing or stale (version changed), and swap it
+    # in atomically: build a sibling dir, then rename over the live one — never
+    # rm_rf the directory the scheduler is executing from mid-copy.
     def ensure!
       return unless needs_copy?
+      return if fresh?
 
+      staging = "#{RUNTIME_DIR}.new"
+      FileUtils.rm_rf(staging)
+      FileUtils.mkdir_p(staging)
+      FileUtils.cp_r(File.join(ROOT, "bin"), staging)
+      FileUtils.cp_r(File.join(ROOT, "lib"), staging)
+      FileUtils.chmod(0o755, File.join(staging, "bin", "every"))
+      File.write(File.join(staging, ".version"), Every::VERSION)
       FileUtils.rm_rf(RUNTIME_DIR)
-      FileUtils.mkdir_p(RUNTIME_DIR)
-      FileUtils.cp_r(File.join(ROOT, "bin"), RUNTIME_DIR)
-      FileUtils.cp_r(File.join(ROOT, "lib"), RUNTIME_DIR)
-      FileUtils.chmod(0o755, BIN)
+      File.rename(staging, RUNTIME_DIR)
       BIN
+    end
+
+    def fresh?
+      File.exist?(BIN) && File.exist?(STAMP) && File.read(STAMP) == Every::VERSION
+    rescue SystemCallError
+      false
     end
 
     # Path the scheduler should invoke. When a copy is required, the stable copy.

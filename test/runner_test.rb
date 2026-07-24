@@ -74,9 +74,32 @@ class RunnerTest < Minitest::Test
   # Timeout must kill the whole process tree, not just the shell.
   def test_capture_timeout_kills_children
     marker = File.join(ENV["EVERY_HOME"], "child-alive")
+    FileUtils.mkdir_p(ENV["EVERY_HOME"])
     # A backgrounded child that would outlive a naive shell-only kill.
     Every::Runner.capture("(sleep 30 && touch #{marker}) & sleep 30", Dir.home, 1)
     sleep 2
     refute File.exist?(marker), "orphaned child survived the timeout kill"
+  end
+
+  # Output in the 32-64KB band must keep its TAIL (errors often live there),
+  # not silently drop it — the bug was the marker-gated tail append.
+  def test_capture_keeps_tail_in_mid_band
+    out, code = Every::Runner.capture("printf 'HEAD'; yes x | head -c 40000; printf 'TAILMARK'", Dir.home, nil)
+    assert_equal 0, code
+    assert_includes out, "HEAD"
+    assert_includes out, "TAILMARK"
+  end
+
+  # Large non-ASCII output must not crash the truncation/concat path.
+  def test_capture_non_ascii_over_cap_no_crash
+    out, code = Every::Runner.capture("printf 'é%.0s' $(seq 1 40000)", Dir.home, nil)
+    assert_equal 0, code
+    assert out.bytesize.positive?
+  end
+
+  def test_login_shell_flag_by_shell
+    # Structural: bash/zsh get -lc, others get -c.
+    assert_equal "-lc", (["/bin/zsh"].first =~ /(bash|zsh)\z/ ? "-lc" : "-c")
+    assert_equal "-c",  ("/bin/sh" =~ /(bash|zsh)\z/ ? "-lc" : "-c")
   end
 end

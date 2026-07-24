@@ -29,18 +29,24 @@ module Every
     end
 
     def service_unit(name)
+      # systemd user services start from a clean environment; propagate a
+      # custom EVERY_HOME so the timer-spawned run reads the same store.
+      env = ENV["EVERY_HOME"] ? "Environment=EVERY_HOME=#{DATA_DIR}\n" : ""
       <<~UNIT
         [Unit]
         Description=every task #{name}
 
         [Service]
         Type=oneshot
-        ExecStart=#{RbConfig.ruby} "#{Runtime.bin}" run "#{name}"
+        #{env}ExecStart=#{RbConfig.ruby} "#{Runtime.bin}" run "#{name}"
       UNIT
     end
 
     def timer_unit(name, schedule)
       lines = ["[Unit]", "Description=every timer #{name}", "", "[Timer]"]
+      # Tighten the default 1-minute slack so sub-minute intervals and calendar
+      # times fire close to when launchd would on macOS.
+      lines << "AccuracySec=1s"
       if schedule.kind == :interval
         lines << "OnActiveSec=#{schedule.interval}"
         lines << "OnUnitActiveSec=#{schedule.interval}"
@@ -54,7 +60,7 @@ module Every
     def calendar_lines(schedule)
       schedule.entries.map do |e|
         t = format("%02d:%02d:00", e["hour"], e["minute"])
-        e["weekday"] ? "#{DAYS[e['weekday']]} *-*-* #{t}" : "*-*-* #{t}"
+        e["weekday"] ? "#{DAYS[e['weekday'] % 7]} *-*-* #{t}" : "*-*-* #{t}"
       end
     end
 

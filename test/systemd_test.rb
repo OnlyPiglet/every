@@ -46,4 +46,26 @@ class SystemdTest < Minitest::Test
     assert_includes u, "Type=oneshot"
     assert_match(/ExecStart=\S+ ".+" run "demo"/, u)
   end
+
+  # Sub-minute cadence needs tight accuracy or systemd batches to ~1 min.
+  def test_timer_sets_tight_accuracy
+    assert_includes timer("15s"), "AccuracySec=1s"
+    assert_includes timer("day 9am"), "AccuracySec=1s"
+  end
+
+  # A custom EVERY_HOME must be propagated, else the timer reads the wrong store.
+  def test_service_propagates_every_home
+    had = ENV.key?("EVERY_HOME")
+    ENV["EVERY_HOME"] = "/tmp/custom-every"
+    assert_includes SD.service_unit("demo"), "Environment=EVERY_HOME=#{Every::DATA_DIR}"
+  ensure
+    ENV.delete("EVERY_HOME") unless had
+  end
+
+  # A legacy weekday of 7 must map to Sunday, not blow the DAYS index.
+  def test_calendar_lines_handles_weekday_seven
+    s = S.from_h("raw" => "sunday 9am", "kind" => "weekly",
+                 "hour" => 9, "minute" => 0, "weekday" => 7)
+    assert_equal ["Sun *-*-* 09:00:00"], SD.calendar_lines(s)
+  end
 end

@@ -18,7 +18,13 @@ class RuntimeTest < Minitest::Test
       /Users/me/code/every
       /Users/me/.local/share/every/runtime
     ]
-    tcc.each  { |p| assert Every::Runtime.tcc_protected?(p), "#{p} should be TCC-protected" }
-    safe.each { |p| refute Every::Runtime.tcc_protected?(p), "#{p} should NOT be TCC-protected" }
+    if RUBY_PLATFORM.include?("darwin")
+      tcc.each  { |p| assert Every::Runtime.tcc_protected?(p), "#{p} should be TCC-protected" }
+      safe.each { |p| refute Every::Runtime.tcc_protected?(p), "#{p} should NOT be TCC-protected" }
+    else
+      # No TCC on Linux — those folder names carry no restriction, so an install
+      # under ~/Documents must stay live (never copied).
+      (tcc + safe).each { |p| refute Every::Runtime.tcc_protected?(p), "#{p} must not be TCC on Linux" }
+    end
   end
 end

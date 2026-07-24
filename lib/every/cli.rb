@@ -188,7 +188,7 @@ module Every
         warn "every: no logs yet for #{name.inspect} (has it run? check: every list)"
         exit 1
       end
-      puts File.readlines(path).last(n).join
+      puts Tail.lines(path, n).join
     end
 
     def rm(name)

@@ -44,13 +44,22 @@ module Every
     def last_run(name)
       path = File.join(RUNS_DIR, "#{name}.jsonl")
       return nil unless File.exist?(path)
-      File.readlines(path).reverse_each do |l|
-        next if l.strip.empty?
-        begin
-          return JSON.parse(l)
-        rescue JSON::ParserError
-          next
+      # Read the tail, not the whole ledger. Normally the last (or torn last)
+      # line answers immediately; only an all-blank/corrupt window makes us grow
+      # it, still eventually scanning the whole file like before.
+      n = 4
+      loop do
+        lines = Tail.lines(path, n)
+        lines.reverse_each do |l|
+          next if l.strip.empty?
+          begin
+            return JSON.parse(l)
+          rescue JSON::ParserError
+            next
+          end
         end
+        break if lines.length < n   # fewer lines than asked ⇒ we saw the whole file
+        n *= 4
       end
       nil
     end

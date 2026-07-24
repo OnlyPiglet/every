@@ -162,6 +162,7 @@ module Every
     # adding N*86400 seconds (which drifts the displayed hour across a DST edge).
     def shift_days(t, days)
       return t if days.zero?
+      require "date"
       d = Date.new(t.year, t.month, t.day) + days
       Time.new(d.year, d.month, d.day, t.hour, t.min, 0)
     end

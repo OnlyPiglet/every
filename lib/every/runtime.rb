@@ -26,7 +26,7 @@ module Every
     end
 
     # Rebuild the copy on every add/resume (so a `git pull` propagates even
-    # without a version bump — the project ships code under the same 0.1.0), and
+    # without a version bump — the project ships code under the same version), and
     # swap it in with two renames so the live dir is never missing mid-copy for
     # more than the instant between them.
     def ensure!

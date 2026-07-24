@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+- `list` now reflects the scheduler's real state, not just the run ledger: a
+  task whose agent isn't loaded shows **`unscheduled`** (with a hint) instead of
+  a stale `ok`/`NEXT`. Closes a gap in the core "know it ran" promise — a task
+  that silently stopped firing no longer looks healthy. (Surfaced by dogfooding.)
+
 ## 0.1.1 — 2026-07-24
 
 Hardening release. Same features as 0.1.0, made dependable after several rounds

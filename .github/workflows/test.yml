@@ -20,6 +20,7 @@ jobs:
           /usr/bin/ruby test/runner_test.rb
           /usr/bin/ruby test/store_test.rb
           /usr/bin/ruby test/runtime_test.rb
+          /usr/bin/ruby test/cli_test.rb
 
   linux:
     runs-on: ubuntu-latest
@@ -34,6 +35,7 @@ jobs:
           ruby test/runner_test.rb
           ruby test/store_test.rb
           ruby test/runtime_test.rb
+          ruby test/cli_test.rb
       # Validate every generated OnCalendar expression with real systemd.
       - name: systemd-analyze calendar validation
         run: |

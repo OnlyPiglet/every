@@ -118,13 +118,12 @@ module Every
           last = store.last_run(name)
           lt = last && safe_time(last["ts"])
           last_s = lt ? lt.strftime("%d %b %H:%M") : "—"
-          status =
-            if t["paused"]          then "paused"
-            elsif last.nil?         then "·"
-            elsif last["exit"] == 0 then "ok"
-            else                         "FAIL(#{last['exit']})"
-            end
-          [name, sched.raw, last_s, status, next_str(t, sched, last)]
+          # Trust the scheduler, not just our own ledger: a task whose agent is
+          # gone will never fire again, so don't report a stale "ok".
+          scheduled = !t["paused"] && backend.loaded?(name)
+          status = task_status(t["paused"], scheduled, last)
+          nxt = scheduled ? next_str(t, sched, last) : "—"
+          [name, sched.raw, last_s, status, nxt]
         rescue StandardError
           # One unreadable/forward-incompatible record must not hide every task.
           [name, (t.dig("schedule", "raw") || "?"), "—", "invalid", "—"]
@@ -137,6 +136,10 @@ module Every
       end
       print_row(headers, widths)
       rows.each { |r| print_row(r, widths, colorize: true) }
+
+      if rows.any? { |r| r[3] == "unscheduled" }
+        puts "\n· some tasks aren't loaded in the scheduler — `every resume <name>` to fix, or `every doctor`"
+      end
     end
 
     def next_str(task, sched, last)
@@ -155,6 +158,7 @@ module Every
       if colorize && $stdout.tty?
         out = out.sub(/\bok\b/, "\e[32mok\e[0m")
         out = out.sub(/\bFAIL\(\d+\)/) { |m| "\e[31m#{m}\e[0m" }
+        out = out.sub(/\bunscheduled\b/, "\e[31munscheduled\e[0m")
       end
       puts out
     end
@@ -264,6 +268,17 @@ module Every
         return [tokens[0...i] + (tokens[(i + 1)..-1] || []), value]
       end
       [tokens, nil]
+    end
+
+    # The list STATUS reflects the SCHEDULER's reality, not just our ledger:
+    # a task that isn't loaded shows "unscheduled" rather than a stale "ok".
+    def task_status(paused, scheduled, last)
+      if paused                 then "paused"
+      elsif !scheduled          then "unscheduled"
+      elsif last.nil?           then "·"
+      elsif last["exit"] == 0   then "ok"
+      else                           "FAIL(#{last['exit']})"
+      end
     end
 
     def safe_time(str)

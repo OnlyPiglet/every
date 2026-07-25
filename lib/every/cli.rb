@@ -59,6 +59,7 @@ module Every
       # (env prefixes, pipes, &&, globs) work. Quote args with spaces or
       # metacharacters as you would at a prompt:  -- 'touch "my file.txt"'.
       cmd = cmd_tokens.join(" ")
+      lock = Store.acquire_lock
       store = Store.load
 
       if explicit_name
@@ -109,6 +110,8 @@ module Every
       # The task runs detached, so its output won't appear in this terminal —
       # spell that out, it's the #1 first-timer confusion.
       puts "  output:   runs in the background → see it with `every log #{name}`"
+    ensure
+      lock&.close   # release the registry lock
     end
 
     # ---- list ----
@@ -221,6 +224,7 @@ module Every
 
     def rm(name)
       usage!("rm <name>") unless name
+      lock = Store.acquire_lock
       store = Store.load
       unless store[name]
         warn "every: no task #{name.inspect}"
@@ -230,10 +234,13 @@ module Every
       backend.delete_units(name)
       store.remove(name)
       puts "#{Color.green('✓')} removed #{name} (logs kept in #{LOG_DIR})"
+    ensure
+      lock&.close
     end
 
     def pause(name)
       usage!("pause <name>") unless name
+      lock = Store.acquire_lock
       store = Store.load
       unless store[name]
         warn "every: no task #{name.inspect}"
@@ -242,10 +249,13 @@ module Every
       backend.disable(name)
       store.update(name, "paused" => true)
       puts "#{Color.green('✓')} paused #{name}"
+    ensure
+      lock&.close
     end
 
     def resume(name)
       usage!("resume <name>") unless name
+      lock = Store.acquire_lock
       store = Store.load
       task = store[name]
       unless task
@@ -257,6 +267,8 @@ module Every
       backend.enable(name)
       store.update(name, "paused" => false)
       puts "#{Color.green('✓')} resumed #{name}"
+    ensure
+      lock&.close
     end
 
     # ---- helpers ----

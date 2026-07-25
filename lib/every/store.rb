@@ -2,6 +2,18 @@ module Every
   # Task registry: one JSON file. Run history: one JSONL file per task.
   class Store
     FILE = File.join(DATA_DIR, "tasks.json")
+    LOCKFILE = File.join(DATA_DIR, ".lock")
+
+    # Serialize the read-modify-write of the registry across concurrent `every`
+    # processes so a second writer waits instead of clobbering the first's
+    # change (lost update). Returns a held exclusive lock; close it to release.
+    # flock is released automatically if the process dies — no stale locks.
+    def self.acquire_lock
+      FileUtils.mkdir_p(DATA_DIR)
+      f = File.open(LOCKFILE, File::RDWR | File::CREAT, 0o644)
+      f.flock(File::LOCK_EX)
+      f
+    end
 
     def self.load
       data = File.exist?(FILE) ? JSON.parse(File.read(FILE)) : {}

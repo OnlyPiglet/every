@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.2.0 — 2026-07-25
+
+A Unix-philosophy pass: more composable, more optimized, more conventional.
+
+### Added
+- **`every list --json`** — one JSON object per task (name, schedule, command,
+  status, last run, next), so you can script it: `every list --json | jq …`.
+- **XDG Base Directory support** — data honors `$XDG_DATA_HOME` and systemd
+  units honor `$XDG_CONFIG_HOME`; `EVERY_HOME` still overrides. The default
+  (`~/.local/share/every`) is unchanged, so existing installs don't move.
+- **`man every`** and **shell completions** for bash, zsh, and fish (subcommands
+  + task names), installed by the Homebrew formula.
+
+### Changed
+- **Consistent exit codes** (sysexits): `0` ok · `64` usage · `66` no such
+  task/log · `1` other. "No such task" was `1` in some commands and `66` in
+  `run`; now `66` everywhere. Documented in the README.
+
+### Fixed / internal
+- **Faster `list` and `doctor`** — one bulk scheduler query (`launchctl list` /
+  `systemctl list-units`) instead of one subprocess per task.
+- **Concurrent-safe writes** — `add`/`rm`/`pause`/`resume` hold an exclusive
+  `flock` on the registry, so parallel commands can't lose an update.
+
 ## 0.1.3 — 2026-07-24
 
 ### Changed

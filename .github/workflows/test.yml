@@ -14,13 +14,7 @@ jobs:
       - name: Syntax check
         run: /usr/bin/ruby -cw bin/every lib/every.rb lib/every/*.rb
       - name: Unit tests
-        run: |
-          /usr/bin/ruby test/schedule_test.rb
-          /usr/bin/ruby test/systemd_test.rb
-          /usr/bin/ruby test/runner_test.rb
-          /usr/bin/ruby test/store_test.rb
-          /usr/bin/ruby test/runtime_test.rb
-          /usr/bin/ruby test/cli_test.rb
+        run: for f in test/*_test.rb; do echo "== $f =="; /usr/bin/ruby "$f" || exit 1; done
 
   linux:
     runs-on: ubuntu-latest
@@ -29,13 +23,7 @@ jobs:
       - name: Syntax check
         run: ruby -cw bin/every lib/every.rb lib/every/*.rb
       - name: Unit tests
-        run: |
-          ruby test/schedule_test.rb
-          ruby test/systemd_test.rb
-          ruby test/runner_test.rb
-          ruby test/store_test.rb
-          ruby test/runtime_test.rb
-          ruby test/cli_test.rb
+        run: for f in test/*_test.rb; do echo "== $f =="; ruby "$f" || exit 1; done
       # Validate every generated OnCalendar expression with real systemd.
       # (Same script the `docker` workflow runs in a pinned container.)
       - name: systemd-analyze calendar validation

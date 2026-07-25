@@ -130,17 +130,22 @@ module Every
     end
 
     # One computed record per task, shared by the table and --json renderers.
+    # The next-run computation happens HERE, inside the rescue, so a task whose
+    # next_run raises is shown as one "invalid" row instead of aborting `list`.
     def build_record(name, t, store, loaded)
       sched = Schedule.from_h(t["schedule"])
       last = store.last_run(name)
       scheduled = !t["paused"] && loaded.include?(name)
       { name: name, schedule: sched.raw, command: t["cmd"], paused: !!t["paused"],
         scheduled: scheduled, status: task_status(t["paused"], scheduled, last),
-        last: last, sched: sched }
+        last: last,
+        next_h: scheduled ? next_display(sched, last) : "—",
+        next_iso: scheduled ? next_iso(sched, last) : nil }
     rescue StandardError
       # One unreadable/forward-incompatible record must not hide every task.
       { name: name, schedule: (t.dig("schedule", "raw") || "?"), command: t["cmd"],
-        paused: false, scheduled: false, status: "invalid", last: nil, sched: nil }
+        paused: false, scheduled: false, status: "invalid", last: nil,
+        next_h: "—", next_iso: nil }
     end
 
     def render_json(records)
@@ -149,7 +154,7 @@ module Every
         { name: r[:name], schedule: r[:schedule], command: r[:command],
           paused: r[:paused], scheduled: r[:scheduled], status: r[:status],
           last: last && { at: last["ts"], exit: last["exit"], seconds: last["dur"] },
-          next: (r[:scheduled] && r[:sched]) ? next_iso(r[:sched], last) : nil }
+          next: r[:next_iso] }
       end
       puts JSON.generate(out)
     end
@@ -158,8 +163,7 @@ module Every
       rows = records.map do |r|
         lt = r[:last] && safe_time(r[:last]["ts"])
         last_s = lt ? lt.strftime("%d %b %H:%M") : "—"
-        nxt = (r[:scheduled] && r[:sched]) ? next_display(r[:sched], r[:last]) : "—"
-        [r[:name], r[:schedule], last_s, r[:status], nxt]
+        [r[:name], r[:schedule], last_s, r[:status], r[:next_h]]
       end
       headers = %w[NAME SCHEDULE LAST STATUS NEXT]
       widths = headers.each_with_index.map do |h, i|

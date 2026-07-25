@@ -90,10 +90,11 @@ module Every
       XML
     end
 
-    # Propagate a custom data dir to launchd-spawned runs, else they would
-    # read the default store and not find the task.
+    # Pin the resolved data dir so a launchd-spawned run reads the SAME store the
+    # task was added under. launchd doesn't inherit the shell's EVERY_HOME or
+    # XDG_DATA_HOME, so without this an XDG (or EVERY_HOME) install's scheduled
+    # runs would recompute the default dir, not find the task, and never fire.
     def env_block
-      return "" unless ENV["EVERY_HOME"]
       "  <key>EnvironmentVariables</key>\n" \
       "  <dict>\n" \
       "    <key>EVERY_HOME</key><string>#{xesc(DATA_DIR)}</string>\n" \

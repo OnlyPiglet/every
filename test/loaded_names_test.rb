@@ -33,4 +33,15 @@ class LoadedNamesTest < Minitest::Test
   def test_systemd_empty
     assert_equal [], Every::Systemd.parse_units("")
   end
+
+  # An indented row (leading whitespace) must still parse, not drop the task.
+  def test_systemd_tolerates_leading_whitespace
+    assert_equal %w[backup], Every::Systemd.parse_units("  every-backup.timer loaded active waiting d\n")
+  end
+
+  # The plist always pins the data dir so scheduled runs read the same store.
+  def test_launchd_env_block_always_pins_data_dir
+    assert_includes Every::Launchd.env_block, "<key>EVERY_HOME</key>"
+    assert_includes Every::Launchd.env_block, Every::DATA_DIR
+  end
 end

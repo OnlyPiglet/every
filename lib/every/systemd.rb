@@ -29,16 +29,17 @@ module Every
     end
 
     def service_unit(name)
-      # systemd user services start from a clean environment; propagate a
-      # custom EVERY_HOME so the timer-spawned run reads the same store.
-      env = ENV["EVERY_HOME"] ? "Environment=EVERY_HOME=#{DATA_DIR}\n" : ""
+      # systemd user services start from a clean environment; pin the resolved
+      # data dir so the timer-spawned run reads the SAME store the task was
+      # added under (EVERY_HOME or XDG_DATA_HOME won't be inherited).
       <<~UNIT
         [Unit]
         Description=every task #{name}
 
         [Service]
         Type=oneshot
-        #{env}ExecStart=#{RbConfig.ruby} "#{Runtime.bin}" run "#{name}"
+        Environment=EVERY_HOME=#{DATA_DIR}
+        ExecStart=#{RbConfig.ruby} "#{Runtime.bin}" run "#{name}"
       UNIT
     end
 
@@ -91,7 +92,8 @@ module Every
     # `list-units --plain --no-legend` prints "UNIT LOAD ACTIVE SUB DESC" rows.
     def parse_units(out)
       out.lines.each_with_object([]) do |line, acc|
-        m = line.split(/\s+/).first.to_s.match(/\Aevery-(.+)\.timer\z/)
+        # no-arg split discards leading blanks, so an indented row still parses
+        m = line.split.first.to_s.match(/\Aevery-(.+)\.timer\z/)
         acc << m[1] if m
       end
     end

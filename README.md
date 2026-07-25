@@ -74,7 +74,8 @@ git clone https://github.com/Serhii-Leniv/every.git
 ln -s "$PWD/every/bin/every" /usr/local/bin/every
 ```
 
-Zero dependencies. Runs on the Ruby already inside macOS.
+Zero dependencies. Runs on the Ruby already inside macOS. The Homebrew install
+also sets up `man every` and tab completion for bash, zsh, and fish.
 
 ## Schedules
 

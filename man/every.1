@@ -1,0 +1,139 @@
+.TH EVERY 1 "July 2026" "every" "User Commands"
+.SH NAME
+every \- humane task scheduler for macOS (launchd) and Linux (systemd)
+.SH SYNOPSIS
+.B every
+.I schedule
+.RB [ \-\-name
+.IR NAME ]
+.RB [ \-\-quiet ]
+.RB [ \-\-timeout
+.IR DURATION ]
+.B \-\-
+.I command\ ...
+.br
+.B every
+.BR list " [" \-\-json ]
+.br
+.B every
+.BR log | run | pause | resume | rm
+.I name
+.br
+.B every
+.BR doctor | version | help
+.SH DESCRIPTION
+.B every
+schedules a command with one human phrase and, unlike raw cron or launchd,
+records every run so you can see whether it actually happened. It generates a
+launchd agent (macOS) or a systemd user timer (Linux) per task; the command
+runs through your login shell in the directory it was added from, and its
+output is captured to a per\-task log.
+.SH SCHEDULE
+.TP
+.BI Ns " / " Nm " / " Nh
+fixed interval (minimum 10s), e.g.\& \fB90s\fR, \fB15m\fR, \fB2h\fR
+.TP
+.B hourly
+every hour
+.TP
+.BI "day " TIME
+daily, e.g.\& \fBday 9am\fR, \fBday 17:30\fR, \fBday 9am,6pm\fR
+.TP
+.BI "weekdays " TIME " / " "weekends " TIME
+Mon\-Fri / Sat+Sun
+.TP
+.IR WEEKDAY " " TIME
+weekly, e.g.\& \fBmonday 10:00\fR, \fBmonday,thursday 6pm\fR
+.SH COMMANDS
+.TP
+.B every \fIschedule\fR \-\- \fIcommand\fR
+Schedule a task. The command is a shell command line (quote args with spaces
+or metacharacters as at a prompt). Output goes to the log, not your terminal.
+.TP
+.B every list \fR[\fB\-\-json\fR]
+Show every task: schedule, last run, status (ok / FAIL / unscheduled / paused),
+next run. With \fB\-\-json\fR, emit one JSON object per task on stdout.
+.TP
+.B every log \fIname\fR \fR[\fB\-n\fR \fIN\fR]
+Print the last \fIN\fR (default 40) lines of a task's run log.
+.TP
+.B every run \fIname\fR
+Run a task now, in your terminal \(em to test it before trusting the schedule.
+.TP
+.B every pause \fIname\fR \fR/\fB resume \fIname\fR
+Stop / restart scheduling without deleting the task.
+.TP
+.B every rm \fIname\fR
+Remove a task and its agent (the log is kept).
+.TP
+.B every doctor
+Explain, in plain language, why a task isn't running.
+.SH OPTIONS
+.TP
+.BI \-\-name " NAME"
+Name the task explicitly (otherwise it's derived from the command).
+.TP
+.B \-\-quiet
+Don't post a desktop notification when this task fails.
+.TP
+.BI \-\-timeout " DURATION"
+Kill a run (and its process group) that overruns, e.g.\& \fB\-\-timeout 30m\fR.
+.TP
+.BI \-n " N"
+For \fBlog\fR: number of lines to show.
+.SH EXIT STATUS
+.TP
+.B 0
+success
+.TP
+.B 64
+usage error (bad arguments)
+.TP
+.B 66
+no such task, or no logs yet
+.TP
+.B 1
+other failure
+.PP
+.B every run
+(and scheduled runs) exit with the command's own code, or
+.B 124
+on \fB\-\-timeout\fR, or
+.B 128+signum
+if a signal killed it.
+.SH ENVIRONMENT
+.TP
+.B EVERY_HOME
+Override the data directory entirely.
+.TP
+.B XDG_DATA_HOME
+Data lives in \fB$XDG_DATA_HOME/every\fR (default \fB~/.local/share/every\fR).
+.TP
+.B XDG_CONFIG_HOME
+systemd user units on Linux (default \fB~/.config/systemd/user\fR).
+.TP
+.B NO_COLOR
+Disable ANSI color (see https://no-color.org).
+.SH FILES
+.TP
+.B ~/.local/share/every/tasks.json
+task registry
+.TP
+.B ~/.local/share/every/logs/\fIname\fB.log
+per\-task run output
+.TP
+.B ~/Library/LaunchAgents/com.every.\fIname\fB.plist
+launchd agent (macOS)
+.SH EXAMPLES
+.nf
+every day 9am \-\- brew update
+every 15m \-\- ~/bin/sync\-notes.sh
+every weekdays 9:30 \-\- ~/bin/standup\-prep.sh
+every list \-\-json | jq \-r '.[] | select(.status | test("FAIL")) | .name'
+.fi
+.SH SEE ALSO
+.BR launchctl (1),
+.BR systemctl (1),
+.BR crontab (5)
+.PP
+Homepage: https://github.com/Serhii-Leniv/every

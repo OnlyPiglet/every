@@ -54,12 +54,11 @@ class SystemdTest < Minitest::Test
   end
 
   # A custom EVERY_HOME must be propagated, else the timer reads the wrong store.
-  def test_service_propagates_every_home
-    had = ENV.key?("EVERY_HOME")
-    ENV["EVERY_HOME"] = "/tmp/custom-every"
+  # The resolved data dir must ALWAYS be pinned into the unit (not only when
+  # EVERY_HOME is set) — otherwise an XDG_DATA_HOME install's scheduled runs
+  # recompute the default dir and never find the task.
+  def test_service_always_pins_data_dir
     assert_includes SD.service_unit("demo"), "Environment=EVERY_HOME=#{Every::DATA_DIR}"
-  ensure
-    ENV.delete("EVERY_HOME") unless had
   end
 
   # A legacy weekday of 7 must map to Sunday, not blow the DAYS index.

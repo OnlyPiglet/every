@@ -90,10 +90,11 @@ module Every
       XML
     end
 
-    # Propagate a custom data dir to launchd-spawned runs, else they would
-    # read the default store and not find the task.
+    # Pin the resolved data dir so a launchd-spawned run reads the SAME store the
+    # task was added under. launchd doesn't inherit the shell's EVERY_HOME or
+    # XDG_DATA_HOME, so without this an XDG (or EVERY_HOME) install's scheduled
+    # runs would recompute the default dir, not find the task, and never fire.
     def env_block
-      return "" unless ENV["EVERY_HOME"]
       "  <key>EnvironmentVariables</key>\n" \
       "  <dict>\n" \
       "    <key>EVERY_HOME</key><string>#{xesc(DATA_DIR)}</string>\n" \
@@ -127,6 +128,22 @@ module Every
     def loaded?(name)
       _out, st = Open3.capture2e("launchctl", "print", "gui/#{uid}/#{label(name)}")
       st.success?
+    end
+
+    # All loaded every-agent names in ONE call (vs one `print` per task) — let
+    # `list`/`doctor` check membership instead of forking a subprocess per task.
+    def loaded_names
+      out, st = Open3.capture2e("launchctl", "list")
+      return [] unless st.success?
+      parse_labels(out)
+    end
+
+    # `launchctl list` prints "PID<TAB>Status<TAB>Label" rows; keep our labels.
+    def parse_labels(out)
+      out.lines.each_with_object([]) do |line, acc|
+        lbl = line.split("\t").last.to_s.strip
+        acc << lbl.sub("com.every.", "") if lbl.start_with?("com.every.")
+      end
     end
   end
 end

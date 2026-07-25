@@ -44,6 +44,7 @@ module Every
       end
 
       backend = Backend.current
+      loaded = backend.loaded_names   # one scheduler query for all tasks, not N
       store.tasks.each do |name, task|
         puts "\ntask: #{name}"
         unit = backend.unit_path(name)
@@ -54,7 +55,7 @@ module Every
           puts "  · paused — resume with: every resume #{name}"
         else
           failures += report("scheduled in #{darwin ? 'launchd' : 'systemd'}",
-                             backend.loaded?(name),
+                             loaded.include?(name),
                              "load it: every resume #{name}")
         end
 

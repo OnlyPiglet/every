@@ -1,0 +1,37 @@
+require "minitest/autorun"
+$LOAD_PATH.unshift File.expand_path("../../lib", __FILE__)
+require "every"
+
+# Path resolution honors the XDG Base Directory spec without breaking the
+# existing default or the EVERY_HOME override.
+class XdgTest < Minitest::Test
+  def dd(env) Every.resolve_data_dir(env) end
+  def cd(env) Every.resolve_config_dir(env) end
+
+  def test_every_home_overrides_everything
+    assert_equal File.expand_path("/custom/x"),
+                 dd("EVERY_HOME" => "/custom/x", "XDG_DATA_HOME" => "/xdg")
+  end
+
+  def test_xdg_data_home
+    assert_equal "/xdg/every", dd("XDG_DATA_HOME" => "/xdg")
+  end
+
+  def test_default_when_neither_set
+    assert_equal File.expand_path("~/.local/share/every"), dd({})
+  end
+
+  # XDG spec: a non-absolute XDG_DATA_HOME must be ignored.
+  def test_relative_xdg_data_home_ignored
+    assert_equal File.expand_path("~/.local/share/every"),
+                 dd("XDG_DATA_HOME" => "relative/path")
+  end
+
+  def test_config_dir_honors_xdg
+    assert_equal "/cfg/systemd/user", cd("XDG_CONFIG_HOME" => "/cfg")
+  end
+
+  def test_config_dir_default
+    assert_equal File.expand_path("~/.config/systemd/user"), cd({})
+  end
+end

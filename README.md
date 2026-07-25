@@ -74,7 +74,8 @@ git clone https://github.com/Serhii-Leniv/every.git
 ln -s "$PWD/every/bin/every" /usr/local/bin/every
 ```
 
-Zero dependencies. Runs on the Ruby already inside macOS.
+Zero dependencies. Runs on the Ruby already inside macOS. The Homebrew install
+also sets up `man every` and tab completion for bash, zsh, and fish.
 
 ## Schedules
 
@@ -91,7 +92,7 @@ Zero dependencies. Runs on the Ruby already inside macOS.
 
 ```
 every <schedule> [--name NAME] [--quiet] -- <command>   schedule it
-every list                                    status of everything
+every list [--json]                           status of everything
 every log <name> [-n N]                       output of recent runs
 every run <name>                              run it right now, see the output
 every pause / resume <name>                   stop / start scheduling
@@ -99,7 +100,27 @@ every rm <name>                               remove (logs are kept)
 every doctor                                  why isn't it running?
 ```
 
-Failed runs pop a macOS notification (silence it per task with `--quiet`).
+Failed runs pop a desktop notification (silence it per task with `--quiet`).
+
+`every list --json` prints one object per task for scripting — pipe it to `jq`:
+
+```bash
+every list --json | jq -r '.[] | select(.status | test("FAIL")) | .name'   # failing tasks
+```
+
+### Exit codes
+
+Follows `sysexits.h`, so scripts can branch on `$?`:
+
+| Code | Meaning |
+|---|---|
+| `0` | success |
+| `64` | usage error (bad arguments) |
+| `66` | no such task / no logs yet |
+| `1` | other failure |
+
+`every run` (and scheduled runs) exit with the command's own code, or `124` on
+`--timeout`, or `128+signum` if a signal killed it.
 
 ## Fine print
 
@@ -122,6 +143,11 @@ Failed runs pop a macOS notification (silence it per task with `--quiet`).
   `~/.config/systemd/user`. Timers stop at logout unless you run
   `loginctl enable-linger $USER`. Install from source (above) — field reports
   very welcome.
+- **Where things live:** tasks/logs/ledgers under `~/.local/share/every` by
+  default. Honors `$XDG_DATA_HOME` (data) and `$XDG_CONFIG_HOME` (systemd units
+  on Linux); `EVERY_HOME` overrides the data dir entirely. `NO_COLOR` is
+  respected. If you set `XDG_DATA_HOME` *after* creating tasks, the old ones
+  stay in the old dir.
 - Uninstall: `every rm` each task, then `rm -rf ~/.local/share/every`.
 
 ## Roadmap

@@ -1,0 +1,34 @@
+#compdef every
+# zsh completion for every
+
+_every() {
+  local -a cmds
+  cmds=(
+    'list:status of everything'
+    'log:output of recent runs'
+    'run:run a task now'
+    'pause:stop scheduling'
+    'resume:start scheduling again'
+    'rm:remove a task'
+    'doctor:why isn'\''t it running?'
+    'version:show version'
+    'help:show help'
+  )
+
+  if (( CURRENT == 2 )); then
+    _describe -t commands 'every command' cmds
+    return
+  fi
+
+  case ${words[2]} in
+    log|run|pause|resume|rm)
+      if (( CURRENT == 3 )); then
+        local -a names
+        names=(${(f)"$(every list --json 2>/dev/null | grep -o '"name":"[^"]*"' | sed 's/"name":"//;s/"//')"})
+        _describe -t tasks 'task' names
+      fi
+      ;;
+  esac
+}
+
+_every "$@"

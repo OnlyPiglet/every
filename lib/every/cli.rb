@@ -24,7 +24,7 @@ module Every
     rescue ArgumentError => e
       warn "every: #{e.message}"
       warn "see: every help"
-      exit 64
+      exit EX_USAGE
     rescue => e
       # Any other failure prints a clean line, never a raw backtrace.
       # (SystemExit/Interrupt aren't StandardError, so they pass through.)
@@ -59,6 +59,7 @@ module Every
       # (env prefixes, pipes, &&, globs) work. Quote args with spaces or
       # metacharacters as you would at a prompt:  -- 'touch "my file.txt"'.
       cmd = cmd_tokens.join(" ")
+      lock = Store.acquire_lock
       store = Store.load
 
       if explicit_name
@@ -109,55 +110,89 @@ module Every
       # The task runs detached, so its output won't appear in this terminal —
       # spell that out, it's the #1 first-timer confusion.
       puts "  output:   runs in the background → see it with `every log #{name}`"
+    ensure
+      lock&.close   # release the registry lock
     end
 
     # ---- list ----
 
     def list
+      json = !@argv.delete("--json").nil?
       store = Store.load
       if store.tasks.empty?
-        puts "no tasks yet — try: every day 9am -- brew update"
+        puts(json ? "[]" : "no tasks yet — try: every day 9am -- brew update")
         return
       end
 
-      rows = store.tasks.map do |name, t|
-        begin
-          sched = Schedule.from_h(t["schedule"])
-          last = store.last_run(name)
-          lt = last && safe_time(last["ts"])
-          last_s = lt ? lt.strftime("%d %b %H:%M") : "—"
-          # Trust the scheduler, not just our own ledger: a task whose agent is
-          # gone will never fire again, so don't report a stale "ok".
-          scheduled = !t["paused"] && backend.loaded?(name)
-          status = task_status(t["paused"], scheduled, last)
-          nxt = scheduled ? next_str(t, sched, last) : "—"
-          [name, sched.raw, last_s, status, nxt]
-        rescue StandardError
-          # One unreadable/forward-incompatible record must not hide every task.
-          [name, (t.dig("schedule", "raw") || "?"), "—", "invalid", "—"]
-        end
-      end
+      loaded = backend.loaded_names   # one scheduler query for all tasks, not N
+      records = store.tasks.map { |name, t| build_record(name, t, store, loaded) }
+      json ? render_json(records) : render_table(records)
+    end
 
+    # One computed record per task, shared by the table and --json renderers.
+    # The next-run computation happens HERE, inside the rescue, so a task whose
+    # next_run raises is shown as one "invalid" row instead of aborting `list`.
+    def build_record(name, t, store, loaded)
+      sched = Schedule.from_h(t["schedule"])
+      last = store.last_run(name)
+      scheduled = !t["paused"] && loaded.include?(name)
+      { name: name, schedule: sched.raw, command: t["cmd"], paused: !!t["paused"],
+        scheduled: scheduled, status: task_status(t["paused"], scheduled, last),
+        last: last,
+        next_h: scheduled ? next_display(sched, last) : "—",
+        next_iso: scheduled ? next_iso(sched, last) : nil }
+    rescue StandardError
+      # One unreadable/forward-incompatible record must not hide every task.
+      { name: name, schedule: (t.dig("schedule", "raw") || "?"), command: t["cmd"],
+        paused: false, scheduled: false, status: "invalid", last: nil,
+        next_h: "—", next_iso: nil }
+    end
+
+    def render_json(records)
+      out = records.map do |r|
+        last = r[:last]
+        { name: r[:name], schedule: r[:schedule], command: r[:command],
+          paused: r[:paused], scheduled: r[:scheduled], status: r[:status],
+          last: last && { at: last["ts"], exit: last["exit"], seconds: last["dur"] },
+          next: r[:next_iso] }
+      end
+      puts JSON.generate(out)
+    end
+
+    def render_table(records)
+      rows = records.map do |r|
+        lt = r[:last] && safe_time(r[:last]["ts"])
+        last_s = lt ? lt.strftime("%d %b %H:%M") : "—"
+        [r[:name], r[:schedule], last_s, r[:status], r[:next_h]]
+      end
       headers = %w[NAME SCHEDULE LAST STATUS NEXT]
       widths = headers.each_with_index.map do |h, i|
-        [h.length, rows.map { |r| r[i].to_s.length }.max || 0].max
+        [h.length, rows.map { |row| row[i].to_s.length }.max || 0].max
       end
       print_row(headers, widths)
-      rows.each { |r| print_row(r, widths, colorize: true) }
+      rows.each { |row| print_row(row, widths, colorize: true) }
 
-      if rows.any? { |r| r[3] == "unscheduled" }
+      if rows.any? { |row| row[3] == "unscheduled" }
         puts "\n· some tasks aren't loaded in the scheduler — `every resume <name>` to fix, or `every doctor`"
       end
     end
 
-    def next_str(task, sched, last)
-      return "—" if task["paused"]
+    def next_display(sched, last)
       if sched.interval
         lt = last && safe_time(last["ts"])
         return "soon" unless lt
         (lt + sched.interval).strftime("%d %b %H:%M")
       else
         sched.next_run&.strftime("%d %b %H:%M") || "?"
+      end
+    end
+
+    def next_iso(sched, last)
+      if sched.interval
+        lt = last && safe_time(last["ts"])
+        lt && (lt + sched.interval).iso8601
+      else
+        sched.next_run&.iso8601
       end
     end
 
@@ -186,49 +221,58 @@ module Every
       path = File.join(LOG_DIR, "#{name}.log")
       unless File.exist?(path)
         warn "every: no logs yet for #{name.inspect} (has it run? check: every list)"
-        exit 1
+        exit EX_NOINPUT
       end
       puts Tail.lines(path, n).join
     end
 
     def rm(name)
       usage!("rm <name>") unless name
+      lock = Store.acquire_lock
       store = Store.load
       unless store[name]
         warn "every: no task #{name.inspect}"
-        exit 1
+        exit EX_NOINPUT
       end
       backend.disable(name)
       backend.delete_units(name)
       store.remove(name)
       puts "#{Color.green('✓')} removed #{name} (logs kept in #{LOG_DIR})"
+    ensure
+      lock&.close
     end
 
     def pause(name)
       usage!("pause <name>") unless name
+      lock = Store.acquire_lock
       store = Store.load
       unless store[name]
         warn "every: no task #{name.inspect}"
-        exit 1
+        exit EX_NOINPUT
       end
       backend.disable(name)
       store.update(name, "paused" => true)
       puts "#{Color.green('✓')} paused #{name}"
+    ensure
+      lock&.close
     end
 
     def resume(name)
       usage!("resume <name>") unless name
+      lock = Store.acquire_lock
       store = Store.load
       task = store[name]
       unless task
         warn "every: no task #{name.inspect}"
-        exit 1
+        exit EX_NOINPUT
       end
       Runtime.ensure!
       backend.write(name, Schedule.from_h(task["schedule"]))
       backend.enable(name)
       store.update(name, "paused" => false)
       puts "#{Color.green('✓')} resumed #{name}"
+    ensure
+      lock&.close
     end
 
     # ---- helpers ----
@@ -307,7 +351,7 @@ module Every
 
     def usage!(msg)
       warn "usage: every #{msg}"
-      exit 64
+      exit EX_USAGE
     end
 
     def version

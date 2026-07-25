@@ -128,5 +128,21 @@ module Every
       _out, st = Open3.capture2e("launchctl", "print", "gui/#{uid}/#{label(name)}")
       st.success?
     end
+
+    # All loaded every-agent names in ONE call (vs one `print` per task) — let
+    # `list`/`doctor` check membership instead of forking a subprocess per task.
+    def loaded_names
+      out, st = Open3.capture2e("launchctl", "list")
+      return [] unless st.success?
+      parse_labels(out)
+    end
+
+    # `launchctl list` prints "PID<TAB>Status<TAB>Label" rows; keep our labels.
+    def parse_labels(out)
+      out.lines.each_with_object([]) do |line, acc|
+        lbl = line.split("\t").last.to_s.strip
+        acc << lbl.sub("com.every.", "") if lbl.start_with?("com.every.")
+      end
+    end
   end
 end

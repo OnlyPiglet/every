@@ -120,6 +120,7 @@ module Every
         return
       end
 
+      loaded = backend.loaded_names   # one scheduler query for all tasks, not N
       rows = store.tasks.map do |name, t|
         begin
           sched = Schedule.from_h(t["schedule"])
@@ -128,7 +129,7 @@ module Every
           last_s = lt ? lt.strftime("%d %b %H:%M") : "—"
           # Trust the scheduler, not just our own ledger: a task whose agent is
           # gone will never fire again, so don't report a stale "ok".
-          scheduled = !t["paused"] && backend.loaded?(name)
+          scheduled = !t["paused"] && loaded.include?(name)
           status = task_status(t["paused"], scheduled, last)
           nxt = scheduled ? next_str(t, sched, last) : "—"
           [name, sched.raw, last_s, status, nxt]

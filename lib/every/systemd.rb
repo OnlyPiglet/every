@@ -80,6 +80,22 @@ module Every
       st.success?
     end
 
+    # All active every-timers in ONE call (vs one `is-active` per task).
+    def loaded_names
+      out, st = sysctl("list-units", "--type=timer", "--state=active",
+                       "--no-legend", "--plain", "every-*.timer")
+      return [] unless st.success?
+      parse_units(out)
+    end
+
+    # `list-units --plain --no-legend` prints "UNIT LOAD ACTIVE SUB DESC" rows.
+    def parse_units(out)
+      out.lines.each_with_object([]) do |line, acc|
+        m = line.split(/\s+/).first.to_s.match(/\Aevery-(.+)\.timer\z/)
+        acc << m[1] if m
+      end
+    end
+
     def delete_units(name)
       [service_path(name), unit_path(name)].each do |p|
         File.delete(p) if File.exist?(p)

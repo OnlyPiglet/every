@@ -142,6 +142,11 @@ Follows `sysexits.h`, so scripts can branch on `$?`:
   `~/.config/systemd/user`. Timers stop at logout unless you run
   `loginctl enable-linger $USER`. Install from source (above) — field reports
   very welcome.
+- **Where things live:** tasks/logs/ledgers under `~/.local/share/every` by
+  default. Honors `$XDG_DATA_HOME` (data) and `$XDG_CONFIG_HOME` (systemd units
+  on Linux); `EVERY_HOME` overrides the data dir entirely. `NO_COLOR` is
+  respected. If you set `XDG_DATA_HOME` *after* creating tasks, the old ones
+  stay in the old dir.
 - Uninstall: `every rm` each task, then `rm -rf ~/.local/share/every`.
 
 ## Roadmap

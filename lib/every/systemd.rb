@@ -4,7 +4,7 @@ module Every
   # `every run <name>`) and every-<name>.timer. Persistent=true mirrors
   # launchd's behavior of firing missed calendar runs on wake/boot.
   module Systemd
-    UNIT_DIR = File.expand_path(ENV["EVERY_SYSTEMD_DIR"] || "~/.config/systemd/user")
+    UNIT_DIR = ENV["EVERY_SYSTEMD_DIR"] ? File.expand_path(ENV["EVERY_SYSTEMD_DIR"]) : Every.resolve_config_dir
     DAYS = %w[Sun Mon Tue Wed Thu Fri Sat].freeze
 
     module_function

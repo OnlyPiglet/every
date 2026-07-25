@@ -21,7 +21,7 @@ module Every
       task = Store.load[name]
       unless task
         warn "every: unknown task #{name.inspect} — orphaned agent? try: every doctor"
-        exit 66
+        exit EX_NOINPUT
       end
 
       FileUtils.mkdir_p(LOG_DIR)

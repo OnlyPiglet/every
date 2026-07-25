@@ -9,6 +9,12 @@ module Every
   HOMEPAGE = "https://github.com/Serhii-Leniv/every".freeze
   TAGLINE = "humane task scheduler for macOS (launchd) and Linux (systemd, beta)".freeze
 
+  # Exit codes (sysexits.h convention): 0 ok · 64 usage/bad args ·
+  # 66 no such task/log · 1 other failure. Runs also surface 124 (timeout) and
+  # 128+signum (killed by a signal); see runner.rb.
+  EX_USAGE = 64
+  EX_NOINPUT = 66
+
   ROOT = File.expand_path("..", __dir__)
   BIN  = File.join(ROOT, "bin", "every")
 

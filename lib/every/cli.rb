@@ -24,7 +24,7 @@ module Every
     rescue ArgumentError => e
       warn "every: #{e.message}"
       warn "see: every help"
-      exit 64
+      exit EX_USAGE
     rescue => e
       # Any other failure prints a clean line, never a raw backtrace.
       # (SystemExit/Interrupt aren't StandardError, so they pass through.)
@@ -114,51 +114,78 @@ module Every
     # ---- list ----
 
     def list
+      json = !@argv.delete("--json").nil?
       store = Store.load
       if store.tasks.empty?
-        puts "no tasks yet — try: every day 9am -- brew update"
+        puts(json ? "[]" : "no tasks yet — try: every day 9am -- brew update")
         return
       end
 
       loaded = backend.loaded_names   # one scheduler query for all tasks, not N
-      rows = store.tasks.map do |name, t|
-        begin
-          sched = Schedule.from_h(t["schedule"])
-          last = store.last_run(name)
-          lt = last && safe_time(last["ts"])
-          last_s = lt ? lt.strftime("%d %b %H:%M") : "—"
-          # Trust the scheduler, not just our own ledger: a task whose agent is
-          # gone will never fire again, so don't report a stale "ok".
-          scheduled = !t["paused"] && loaded.include?(name)
-          status = task_status(t["paused"], scheduled, last)
-          nxt = scheduled ? next_str(t, sched, last) : "—"
-          [name, sched.raw, last_s, status, nxt]
-        rescue StandardError
-          # One unreadable/forward-incompatible record must not hide every task.
-          [name, (t.dig("schedule", "raw") || "?"), "—", "invalid", "—"]
-        end
-      end
+      records = store.tasks.map { |name, t| build_record(name, t, store, loaded) }
+      json ? render_json(records) : render_table(records)
+    end
 
+    # One computed record per task, shared by the table and --json renderers.
+    def build_record(name, t, store, loaded)
+      sched = Schedule.from_h(t["schedule"])
+      last = store.last_run(name)
+      scheduled = !t["paused"] && loaded.include?(name)
+      { name: name, schedule: sched.raw, command: t["cmd"], paused: !!t["paused"],
+        scheduled: scheduled, status: task_status(t["paused"], scheduled, last),
+        last: last, sched: sched }
+    rescue StandardError
+      # One unreadable/forward-incompatible record must not hide every task.
+      { name: name, schedule: (t.dig("schedule", "raw") || "?"), command: t["cmd"],
+        paused: false, scheduled: false, status: "invalid", last: nil, sched: nil }
+    end
+
+    def render_json(records)
+      out = records.map do |r|
+        last = r[:last]
+        { name: r[:name], schedule: r[:schedule], command: r[:command],
+          paused: r[:paused], scheduled: r[:scheduled], status: r[:status],
+          last: last && { at: last["ts"], exit: last["exit"], seconds: last["dur"] },
+          next: (r[:scheduled] && r[:sched]) ? next_iso(r[:sched], last) : nil }
+      end
+      puts JSON.generate(out)
+    end
+
+    def render_table(records)
+      rows = records.map do |r|
+        lt = r[:last] && safe_time(r[:last]["ts"])
+        last_s = lt ? lt.strftime("%d %b %H:%M") : "—"
+        nxt = (r[:scheduled] && r[:sched]) ? next_display(r[:sched], r[:last]) : "—"
+        [r[:name], r[:schedule], last_s, r[:status], nxt]
+      end
       headers = %w[NAME SCHEDULE LAST STATUS NEXT]
       widths = headers.each_with_index.map do |h, i|
-        [h.length, rows.map { |r| r[i].to_s.length }.max || 0].max
+        [h.length, rows.map { |row| row[i].to_s.length }.max || 0].max
       end
       print_row(headers, widths)
-      rows.each { |r| print_row(r, widths, colorize: true) }
+      rows.each { |row| print_row(row, widths, colorize: true) }
 
-      if rows.any? { |r| r[3] == "unscheduled" }
+      if rows.any? { |row| row[3] == "unscheduled" }
         puts "\n· some tasks aren't loaded in the scheduler — `every resume <name>` to fix, or `every doctor`"
       end
     end
 
-    def next_str(task, sched, last)
-      return "—" if task["paused"]
+    def next_display(sched, last)
       if sched.interval
         lt = last && safe_time(last["ts"])
         return "soon" unless lt
         (lt + sched.interval).strftime("%d %b %H:%M")
       else
         sched.next_run&.strftime("%d %b %H:%M") || "?"
+      end
+    end
+
+    def next_iso(sched, last)
+      if sched.interval
+        lt = last && safe_time(last["ts"])
+        lt && (lt + sched.interval).iso8601
+      else
+        sched.next_run&.iso8601
       end
     end
 
@@ -187,7 +214,7 @@ module Every
       path = File.join(LOG_DIR, "#{name}.log")
       unless File.exist?(path)
         warn "every: no logs yet for #{name.inspect} (has it run? check: every list)"
-        exit 1
+        exit EX_NOINPUT
       end
       puts Tail.lines(path, n).join
     end
@@ -197,7 +224,7 @@ module Every
       store = Store.load
       unless store[name]
         warn "every: no task #{name.inspect}"
-        exit 1
+        exit EX_NOINPUT
       end
       backend.disable(name)
       backend.delete_units(name)
@@ -210,7 +237,7 @@ module Every
       store = Store.load
       unless store[name]
         warn "every: no task #{name.inspect}"
-        exit 1
+        exit EX_NOINPUT
       end
       backend.disable(name)
       store.update(name, "paused" => true)
@@ -223,7 +250,7 @@ module Every
       task = store[name]
       unless task
         warn "every: no task #{name.inspect}"
-        exit 1
+        exit EX_NOINPUT
       end
       Runtime.ensure!
       backend.write(name, Schedule.from_h(task["schedule"]))
@@ -308,7 +335,7 @@ module Every
 
     def usage!(msg)
       warn "usage: every #{msg}"
-      exit 64
+      exit EX_USAGE
     end
 
     def version

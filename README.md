@@ -91,7 +91,7 @@ Zero dependencies. Runs on the Ruby already inside macOS.
 
 ```
 every <schedule> [--name NAME] [--quiet] -- <command>   schedule it
-every list                                    status of everything
+every list [--json]                           status of everything
 every log <name> [-n N]                       output of recent runs
 every run <name>                              run it right now, see the output
 every pause / resume <name>                   stop / start scheduling
@@ -99,7 +99,27 @@ every rm <name>                               remove (logs are kept)
 every doctor                                  why isn't it running?
 ```
 
-Failed runs pop a macOS notification (silence it per task with `--quiet`).
+Failed runs pop a desktop notification (silence it per task with `--quiet`).
+
+`every list --json` prints one object per task for scripting — pipe it to `jq`:
+
+```bash
+every list --json | jq -r '.[] | select(.status | test("FAIL")) | .name'   # failing tasks
+```
+
+### Exit codes
+
+Follows `sysexits.h`, so scripts can branch on `$?`:
+
+| Code | Meaning |
+|---|---|
+| `0` | success |
+| `64` | usage error (bad arguments) |
+| `66` | no such task / no logs yet |
+| `1` | other failure |
+
+`every run` (and scheduled runs) exit with the command's own code, or `124` on
+`--timeout`, or `128+signum` if a signal killed it.
 
 ## Fine print
 

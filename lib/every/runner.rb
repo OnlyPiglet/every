@@ -1,5 +1,5 @@
 module Every
-  # `every run <name>` — what launchd actually invokes. Executes the task's
+  # `every run <name>` — what the platform scheduler invokes. Executes the task's
   # command through the user's login shell (so PATH matches the terminal),
   # captures all output, and records the run.
   module Runner
@@ -75,7 +75,13 @@ module Every
         tail = tail.byteslice(over, HALF_OUTPUT)
       end
 
-      Open3.popen2e(*login_shell, cmd, chdir: dir, pgroup: true) do |stdin, out, wait|
+      spawn_options = { chdir: dir }
+      # Negative process-group signals are a POSIX primitive.  Windows uses
+      # taskkill/Job Objects instead (see terminate), so do not pass pgroup
+      # there; older RubyInstaller builds reject the option entirely.
+      spawn_options[:pgroup] = true unless Every.windows?
+
+      Open3.popen2e(*login_shell, cmd, **spawn_options) do |stdin, out, wait|
         stdin.close
         pid = wait.pid
         drain = lambda do
@@ -123,6 +129,14 @@ module Every
     # Kill the whole process tree: with pgroup:true the child is its own group
     # leader, so a negative pid signals the group (no getpgid/reap race).
     def terminate(pid)
+      if Every.windows?
+        # taskkill /T reaches the shell's descendants.  A future native Job
+        # Object implementation can replace this without changing capture().
+        system("taskkill.exe", "/PID", pid.to_s, "/T", "/F",
+               out: File::NULL, err: File::NULL)
+        return
+      end
+
       Process.kill("TERM", -pid)
       sleep 0.3
       Process.kill("KILL", -pid)
@@ -133,20 +147,48 @@ module Every
     # Run through the user's login shell so PATH matches their terminal. Only
     # bash/zsh accept the bundled `-lc`; sh/dash/others reject `-l`, so use -c.
     def login_shell
-      return ["/bin/zsh", "-lc"] if RUBY_PLATFORM.include?("darwin")
+      return windows_shell if Every.windows?
+      return ["/bin/zsh", "-lc"] if Every.darwin?
       sh = ENV["SHELL"] || "/bin/bash"
       [sh, sh =~ /(bash|zsh)\z/ ? "-lc" : "-c"]
+    end
+
+    def windows_shell
+      shell = ENV["EVERY_SHELL"].to_s
+      shell = ENV["COMSPEC"].to_s if shell.empty?
+      shell = "cmd.exe" if shell.empty?
+      base = File.basename(shell).downcase
+      if base == "powershell.exe" || base == "pwsh.exe"
+        [shell, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command"]
+      else
+        [shell, "/d", "/s", "/c"]
+      end
     end
 
     # Desktop notification so failures don't die silently in a log file.
     def notify_failure(name, exit_code)
       msg = "#{name} failed (exit #{exit_code}) — every log #{name}"
-      if RUBY_PLATFORM.include?("darwin")
+      if Every.darwin?
         script = "display notification \"#{osa_esc(msg)}\" with title \"every\""
         system("osascript", "-e", script, out: File::NULL, err: File::NULL)
+      elsif Every.windows?
+        notify_windows(msg)
       else
         system("notify-send", "every", msg, out: File::NULL, err: File::NULL)
       end
+    end
+
+    # Windows has no inbox notification utility guaranteed across editions.
+    # `msg.exe` is a best-effort fallback for the current interactive user; a
+    # failure to display it must never turn an already-recorded task failure
+    # into another failure.
+    def notify_windows(msg)
+      user = ENV["USERNAME"].to_s
+      return if user.empty?
+      system("msg.exe", user, "/TIME:5", msg,
+             out: File::NULL, err: File::NULL)
+    rescue StandardError
+      nil
     end
 
     def osa_esc(s)
@@ -162,7 +204,7 @@ module Every
       [dir, nil]
     rescue SystemCallError
       [Dir.home,
-       "note: cwd #{dir} not readable under launchd (TCC) — ran from #{Dir.home}\n"]
+      "note: cwd #{dir} not readable under scheduler — ran from #{Dir.home}\n"]
     end
 
     def append_log(name, started, exit_code, duration, out)
@@ -193,7 +235,11 @@ module Every
       return if lines.length <= MAX_RUN_RECORDS
       tmp = "#{path}.tmp.#{Process.pid}"
       File.write(tmp, lines.last(MAX_RUN_RECORDS).join)
-      File.rename(tmp, path)   # atomic: a crash mid-trim can't truncate history
+      if Every.windows?
+        FileUtils.mv(tmp, path, force: true)
+      else
+        File.rename(tmp, path)   # atomic: a crash mid-trim can't truncate history
+      end
     end
 
     def rotate(path)

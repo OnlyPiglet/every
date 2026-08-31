@@ -34,4 +34,18 @@ class XdgTest < Minitest::Test
   def test_config_dir_default
     assert_equal File.expand_path("~/.config/systemd/user"), cd({})
   end
+
+  def test_windows_data_dir_uses_localappdata
+    Every.stub(:windows?, true) do
+      assert_equal "C:/Users/Alice/AppData/Local/every",
+                   dd("LOCALAPPDATA" => "C:/Users/Alice/AppData/Local")
+    end
+  end
+
+  def test_windows_config_dir_uses_appdata
+    Every.stub(:windows?, true) do
+      assert_equal "C:/Users/Alice/AppData/Roaming/every",
+                   cd("APPDATA" => "C:/Users/Alice/AppData/Roaming")
+    end
+  end
 end

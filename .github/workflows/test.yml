@@ -29,6 +29,35 @@ jobs:
       - name: systemd-analyze calendar validation
         run: ruby test/systemd_calendar_check.rb
 
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+      - name: Syntax check
+        shell: pwsh
+        run: |
+          ruby -cw bin/every
+          ruby -cw lib/every.rb
+          Get-ChildItem lib/every/*.rb | ForEach-Object { ruby -cw $_.FullName }
+      - name: Unit tests
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Get-ChildItem test/*_test.rb | ForEach-Object {
+            Write-Host "== $($_.Name) =="
+            ruby $_.FullName
+          }
+      - name: PowerShell installer syntax check
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path install.ps1), [ref]$tokens, [ref]$errors) | Out-Null
+          if ($errors.Count -gt 0) { $errors | Format-List; exit 1 }
+
   # The Linux install path (install.sh) — the one users curl. Exercised end to
   # end: install, run the installed binary, uninstall, and prove it left
   # nothing behind.

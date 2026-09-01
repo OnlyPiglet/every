@@ -33,7 +33,7 @@ class WindowsTaskSchedulerTest < Minitest::Test
   def test_wrapper_pins_data_dir_and_loads_runtime
     wrapper = WS.runner_wrapper("demo")
     assert_includes wrapper, "ENV[\"EVERY_HOME\"]"
-    assert_includes wrapper, Every::DATA_DIR
+    assert_includes wrapper, Every::DATA_DIR.dump
     assert_includes wrapper, "require \"every\""
     assert_includes wrapper, "Every::Runner.run(\"demo\")"
   end
@@ -48,6 +48,49 @@ class WindowsTaskSchedulerTest < Minitest::Test
       { name: "backup", status: "Ready" },
       { name: "paused", status: "Disabled" }
     ], WS.parse_tasks(out)
+  end
+
+  def test_parse_task_states_filters_non_every_tasks
+    out = <<~CSV
+      "TaskPath","TaskName","State"
+      "\\every\\","backup","Ready"
+      "\\every\\","paused","Disabled"
+      "\\Microsoft\\Windows\\","Other","Ready"
+    CSV
+    assert_equal [
+      { name: "backup", state: "Ready" },
+      { name: "paused", state: "Disabled" }
+    ], WS.parse_task_states(out)
+  end
+
+  def test_task_xml_uses_stable_windows_shim
+    Every.stub(:windows?, true) do
+      Every::Runtime.stub(:bin, "C:/Program Files/every/bin/every.cmd") do
+        WS.stub(:current_user, "Alice") do
+          xml = WS.task_xml("demo", S.parse(["15m"]))
+          comspec = ENV["COMSPEC"].to_s
+          comspec = "cmd.exe" if comspec.empty?
+          assert_includes xml, "<Command>#{comspec}</Command>"
+          assert_includes xml, %Q{set "EVERY_HOME=#{Every::DATA_DIR}" &amp;&amp; call "C:/Program Files/every/bin/every.cmd" run "demo"}
+        end
+      end
+    end
+  end
+
+  def test_windows_runner_uses_a_temporary_script
+    Every.stub(:windows?, true) do
+      Every::Runner.stub(:windows_shell, ["cmd.exe", "/d", "/s", "/c"]) do
+        argv, cleanup = Every::Runner.command_argv('echo "my file.txt"')
+        begin
+          assert_equal ["cmd.exe", "/d", "/s", "/c"], argv[0, 4]
+          assert_match(/\.cmd\z/, argv.last)
+          assert_equal "echo \"my file.txt\"\r\n", File.binread(argv.last)
+        ensure
+          cleanup.call
+        end
+        refute File.exist?(argv.last)
+      end
+    end
   end
 
   def test_subminute_intervals_are_rejected

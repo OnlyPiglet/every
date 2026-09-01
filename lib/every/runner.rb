@@ -81,30 +81,35 @@ module Every
       # there; older RubyInstaller builds reject the option entirely.
       spawn_options[:pgroup] = true unless Every.windows?
 
-      Open3.popen2e(*login_shell, cmd, **spawn_options) do |stdin, out, wait|
-        stdin.close
-        pid = wait.pid
-        drain = lambda do
-          while (chunk = out.read(16 * 1024))
-            keep.call(chunk)
+      argv, cleanup = command_argv(cmd)
+      begin
+        Open3.popen2e(*argv, **spawn_options) do |stdin, out, wait|
+          stdin.close
+          pid = wait.pid
+          drain = lambda do
+            while (chunk = out.read(16 * 1024))
+              keep.call(chunk)
+            end
           end
-        end
 
-        begin
-          # wait.value lives INSIDE the timeout: a command that closes stdout
-          # early but keeps running still gets killed at the deadline.
-          if timeout_sec
-            Timeout.timeout(timeout_sec) { drain.call; status = wait.value }
-          else
-            drain.call
-            status = wait.value
+          begin
+            # wait.value lives INSIDE the timeout: a command that closes stdout
+            # early but keeps running still gets killed at the deadline.
+            if timeout_sec
+              Timeout.timeout(timeout_sec) { drain.call; status = wait.value }
+            else
+              drain.call
+              status = wait.value
+            end
+          rescue Timeout::Error
+            timed_out = true
+            terminate(pid)
+            status = (wait.value rescue nil)
+            head << "\n[every: killed after #{timeout_sec}s timeout]\n"
           end
-        rescue Timeout::Error
-          timed_out = true
-          terminate(pid)
-          status = (wait.value rescue nil)
-          head << "\n[every: killed after #{timeout_sec}s timeout]\n"
         end
+      ensure
+        cleanup.call
       end
 
       # Append the tail whenever it exists; only inject the truncation marker
@@ -157,12 +162,40 @@ module Every
       shell = ENV["EVERY_SHELL"].to_s
       shell = ENV["COMSPEC"].to_s if shell.empty?
       shell = "cmd.exe" if shell.empty?
-      base = File.basename(shell).downcase
-      if base == "powershell.exe" || base == "pwsh.exe"
+      base = File.basename(shell).downcase.sub(/\.exe\z/, "")
+      if base == "powershell" || base == "pwsh"
         [shell, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command"]
       else
         [shell, "/d", "/s", "/c"]
       end
+    end
+
+    # Passing a quoted command as the final argv element of cmd.exe makes Ruby
+    # add another Windows command-line escaping layer. A temporary script gives
+    # cmd.exe and PowerShell the command text verbatim while preserving cwd,
+    # output capture, and timeout behavior in capture().
+    def command_argv(cmd)
+      return [*login_shell, cmd], -> {} unless Every.windows?
+
+      require "tempfile"
+      shell = windows_shell
+      powershell = shell.last == "-Command"
+      suffix = powershell ? ".ps1" : ".cmd"
+      temp = Tempfile.new(["every-command", suffix])
+      temp.binmode
+      content = "#{cmd}\r\n"
+      content = "\uFEFF#{content}" if powershell
+      temp.write(content.encode(Encoding::UTF_8))
+      temp.close
+      argv = if powershell
+               [*shell[0...-1], "-File", temp.path]
+             else
+               [*shell, temp.path]
+             end
+      [argv, -> { temp.close! rescue nil }]
+    rescue StandardError
+      temp.close! rescue nil if temp
+      raise
     end
 
     # Desktop notification so failures don't die silently in a log file.
@@ -236,7 +269,9 @@ module Every
       tmp = "#{path}.tmp.#{Process.pid}"
       File.write(tmp, lines.last(MAX_RUN_RECORDS).join)
       if Every.windows?
-        FileUtils.mv(tmp, path, force: true)
+        # Do not use force: true: a failed replacement must raise instead of
+        # silently dropping the freshly written trimmed ledger.
+        FileUtils.mv(tmp, path)
       else
         File.rename(tmp, path)   # atomic: a crash mid-trim can't truncate history
       end

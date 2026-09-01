@@ -89,11 +89,10 @@ module Every
         f.flush
         f.fsync
       end
-      # POSIX rename atomically replaces the destination.  Windows Ruby builds
-      # commonly reject rename-over-existing, so use the runtime's forceful
-      # move there; the temp file still prevents a partial JSON write.
+      # Both branches replace the destination without swallowing errors. The
+      # temp file still prevents a partial JSON write if the process crashes.
       if Every.windows?
-        FileUtils.mv(tmp, FILE, force: true)
+        FileUtils.mv(tmp, FILE)
       else
         File.rename(tmp, FILE)
       end

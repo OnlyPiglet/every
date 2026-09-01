@@ -69,7 +69,7 @@ if ([version]$rubyVersion -lt [version]"2.6") {
 }
 
 function Resolve-Source {
-  $here = Split-Path -Parent $MyInvocation.MyCommand.Path
+  $here = $PSScriptRoot
   if (-not $Version -and -not $Ref -and
       (Test-Path (Join-Path $here "lib\every.rb")) -and
       (Test-Path (Join-Path $here "bin\every"))) {
@@ -108,16 +108,18 @@ $source = Resolve-Source
 $parent = Split-Path -Parent $Prefix
 New-Item -ItemType Directory -Path $parent -Force | Out-Null
 
-$staging = "$Prefix.new.$PID"
-$previous = "$Prefix.old.$PID"
+$libParent = Split-Path -Parent $libDir
+New-Item -ItemType Directory -Path $libParent -Force | Out-Null
+$staging = "${libDir}.new.$PID"
+$previous = "${libDir}.old.$PID"
 if (Test-Path $staging) { Remove-Item -Recurse -Force $staging }
 if (Test-Path $previous) { Remove-Item -Recurse -Force $previous }
 New-Item -ItemType Directory -Path $staging -Force | Out-Null
 Copy-Item (Join-Path $source "bin") (Join-Path $staging "bin") -Recurse
 Copy-Item (Join-Path $source "lib") (Join-Path $staging "lib") -Recurse
 
-if (Test-Path $Prefix) { Move-Item $Prefix $previous }
-Move-Item $staging $Prefix
+if (Test-Path $libDir) { Move-Item $libDir $previous }
+Move-Item $staging $libDir
 if (Test-Path $previous) { Remove-Item -Recurse -Force $previous }
 
 New-Item -ItemType Directory -Path $binDir -Force | Out-Null

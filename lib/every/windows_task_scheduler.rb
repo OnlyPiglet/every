@@ -47,12 +47,13 @@ module Every
     end
 
     def disable(name)
-      schtasks("/Change", "/TN", task_name(name), "/DISABLE")
+      out, st = schtasks("/Change", "/TN", task_name(name), "/DISABLE")
+      raise "Task Scheduler disable failed: #{out.strip}" unless st.success?
       true
     end
 
     def loaded?(name)
-      _out, st = schtasks("/Query", "/TN", task_name(name), "/FO", "LIST", "/NH")
+      _out, st = schtasks("/Query", "/TN", task_name(name), "/FO", "LIST")
       st.success?
     end
 
@@ -62,18 +63,19 @@ module Every
       loaded?(name)
     end
 
-    # `/FO CSV /NH` is machine-readable and avoids localized column headers.
-    # We only parse the task path and status; the rest is owned by the service.
+    # PowerShell exposes State as a stable enum property. Unlike schtasks' text
+    # status column, it does not change with the user's display language.
     def loaded_names
-      out, st = schtasks("/Query", "/FO", "CSV", "/NH")
-      return [] unless st.success?
+      out, st = powershell_task_query
+      raise "Task Scheduler state query failed: #{out.strip}" unless st.success?
 
-      parse_tasks(out).each_with_object([]) do |row, names|
-        names << row[:name] unless row[:status].to_s =~ /disabled/i
+      parse_task_states(out).each_with_object([]) do |row, names|
+        names << row[:name] unless row[:state].to_s.casecmp("Disabled").zero?
       end
     end
 
     def parse_tasks(out)
+      require "csv"
       CSV.parse(out.to_s, liberal_parsing: true).each_with_object([]) do |row, acc|
         next if row.empty?
         raw_name = row[0].to_s.sub(/\A\uFEFF/, "").strip
@@ -85,8 +87,26 @@ module Every
       []
     end
 
+    # Input is ConvertTo-Csv output with TaskPath, TaskName, and State columns.
+    # The property names are explicit and State is an enum, so no localized
+    # display labels are used to decide whether a task is enabled.
+    def parse_task_states(out)
+      require "csv"
+      CSV.parse(out.to_s, liberal_parsing: true).each_with_object([]) do |row, acc|
+        next if row.empty? || row[0].to_s == "TaskPath"
+        path = row[0].to_s.sub(/\A\uFEFF/, "").strip
+        name = row[1].to_s.strip
+        match = "#{path}#{name}".match(/\A\\every\\(.+)\z/i)
+        next unless match
+        acc << { name: match[1], state: row[2].to_s }
+      end
+    rescue CSV::MalformedCSVError
+      []
+    end
+
     def delete_units(name)
-      schtasks("/Delete", "/TN", task_name(name), "/F")
+      out, st = schtasks("/Delete", "/TN", task_name(name), "/F")
+      raise "Task Scheduler delete failed: #{out.strip}" unless st.success?
       [xml_path(name), wrapper_path(name)].each do |path|
         File.delete(path) if File.exist?(path)
       end
@@ -100,6 +120,7 @@ module Every
     end
 
     def task_xml(name, schedule)
+      command, arguments = task_action(name)
       <<~XML
         <?xml version="1.0" encoding="UTF-8"?>
         <Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
@@ -129,12 +150,25 @@ module Every
           </Settings>
           <Actions Context="Author">
             <Exec>
-              <Command>#{xml_escape(RbConfig.ruby)}</Command>
-              <Arguments>#{xml_escape(%("#{wrapper_path(name)}"))}</Arguments>
+              <Command>#{xml_escape(command)}</Command>
+              <Arguments>#{xml_escape(arguments)}</Arguments>
             </Exec>
           </Actions>
         </Task>
       XML
+    end
+
+    def task_action(name)
+      launcher = Runtime.bin
+      if Every.windows? && launcher.to_s.downcase.end_with?(".cmd")
+        comspec = ENV["COMSPEC"].to_s
+        comspec = "cmd.exe" if comspec.empty?
+        args = ["/d", "/s", "/c", "set", windows_quote("EVERY_HOME=#{DATA_DIR}"),
+                "&&", "call", windows_quote(launcher), "run", windows_quote(name)].join(" ")
+        [comspec, args]
+      else
+        [RbConfig.ruby, windows_quote(wrapper_path(name))]
+      end
     end
 
     def trigger_xml(schedule)
@@ -218,18 +252,33 @@ module Every
       value.to_s.gsub("&", "&amp;").gsub("<", "&lt;").gsub(">", "&gt;")
     end
 
-    # The XML and wrapper are written before registration.  FileUtils.mv with
-    # force works on both POSIX and Windows, where rename-over-existing differs.
+    # The XML and wrapper are written before registration. FileUtils.mv handles
+    # replacement on Windows, where rename-over-existing differs from POSIX.
     def atomic_write(path, content)
       tmp = "#{path}.tmp.#{Process.pid}"
       File.write(tmp, content)
-      FileUtils.mv(tmp, path, force: true)
+      FileUtils.mv(tmp, path)
     ensure
       File.delete(tmp) if tmp && File.exist?(tmp)
     end
 
     def schtasks(*args)
       Open3.capture2e("schtasks.exe", *args)
+    end
+
+    def powershell_task_query
+      script = <<~PS
+        $ErrorActionPreference = 'Stop'
+        $tasks = @(Get-ScheduledTask -TaskPath '\every\')
+        $tasks | Select-Object TaskPath, TaskName, State | ConvertTo-Csv -NoTypeInformation
+      PS
+      powershell = ENV["EVERY_POWERSHELL"].to_s
+      powershell = "powershell.exe" if powershell.empty?
+      Open3.capture2e(powershell, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script)
+    end
+
+    def windows_quote(value)
+      %("#{value.to_s.gsub('"', '\"')}")
     end
   end
 end
